@@ -59,7 +59,7 @@ PRO plot_repart, data, X,Y, $
 ;
 ;
 ; RESTRICTIONS:
-;
+;w
 ;
 ;
 ; PROCEDURE:
