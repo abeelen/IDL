@@ -77,4 +77,5 @@ DEFSYSV, '!jansky',1.D-26                                    ; janski unit (W m^
 DEFSYSV, '!pc2m',3.0857678D16                                ; parsec to meter coefficient
 DEFSYSV, '!arcsec2Deg',60.^(-2)                              ; arcsec to deg
 DEFSYSV, '!arcsec2radian',60.^(-2)*180.^(-1)*!Dpi            ; arcsec to radian
-DEFSYSV, '!arcsec2sr',60.^(-4)*180.^(-2)*!Dpi^(2) ; arcsec2 to steradian
+DEFSYSV, '!arcsec2sr',60.^(-4)*180.^(-2)*!Dpi^(2)            ; arcsec2 to steradian
+DEFSYSV, '!deg2sr',180.^(-2)*!Dpi^(2)                        ; deg2 to steradian
