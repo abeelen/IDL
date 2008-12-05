@@ -3,7 +3,7 @@ PRO plot_repart, data, X,Y, $
                  OVERPLOT=OVERPLOT, LINESTYLE=linestyle,COLOR=color, $
                  REVERSED=REVERSED,INVERSED=INVERSED,_EXTRA = extra, $
                  NOPLOT=NOPLOT,SORTED=SORTED,MEDIAN=MEDIAN, $
-                 NOT_NORMALIZED = not_normalized
+                 NOT_NORMALIZED = not_normalized, _EXTRA = _extra
 ;+
 ; NAME:       plot_repart
 ; 
@@ -92,7 +92,7 @@ IF KEYWORD_SET(not_normalized) THEN $
 IF  NOT KEYWORD_SET(OVERPLOT) AND NOT KEYWORD_SET(NOPLOT) THEN $
 PLOT,xrange,[0,1],XRANGE=xrange,yrange=YRANGE,/XSTYLE,/YSTYLE, $
   XTITLE=xtitle, YTITLE=ytitle, COLOR=color,$
-      /nodata
+      /nodata, _EXTRA=_extra
 
 
 sorted = SORT(data)
