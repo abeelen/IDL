@@ -80,3 +80,9 @@ DEFSYSV, '!arcsec2radian',60.^(-2)*180.^(-1)*!Dpi            ; arcsec to radian
 DEFSYSV, '!arcsec2sr',60.^(-4)*180.^(-2)*!Dpi^(2)            ; arcsec2 to steradian
 DEFSYSV, '!deg2sr',180.^(-2)*!Dpi^(2)                        ; deg2 to steradian
 DEFSYSV, '!deg2rad',!pi/180.                                 ; deg to radian
+
+;; For Poker
+DEFSYSV, '!arcmin2rad',60.*180.^(-1)*!Dpi                    ; arcmin to radian
+DEFSYSV, '!fwhm2sigma', 1./(2*SQRT(2*ALOG(2)))               ; fwhm to sigma
+DEFSYSV, '!undef', -9999999.                                 ; stupid undef 
+DEFSYSV, '!poker','/home/abeelen/poker/Poker_v2.2/'
