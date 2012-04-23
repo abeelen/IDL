@@ -259,6 +259,28 @@ PRO MHFIT_PCOV, params, covar, parinfo, nsigma=nsigma
 multiplot, /default
 END
 
+PRO MHFIT_PCENT, chains, percentils, PERCENT=percent
+
+
+  IF NOT KEYWORD_SET(percent) THEN percent = [erfc(1./sqrt(2))/2, 0.5, 1-erfc(1./sqrt(2))/2]
+ 
+  s = size(chains)
+  nChain   = s[1]
+  nIter    = s[2]
+  nPercent = N_ELEMENTS(percent)
+
+  percentils = DBLARR(nChain, nPercent)
+
+  FOR iChain=0, nChain-1 DO BEGIN
+     lchain = chains[iChain,*]
+     lchain = lchain[SORT(lchain)]
+     percentils[iChain,*] = lchain[(nIter+1)*percent]
+  ENDFOR
+
+  ENDFOR
+
+END 
+
 PRO MHFIT_BSTAT, chains, params, perror, covar
 ;; Basic statistic on the chains
 
