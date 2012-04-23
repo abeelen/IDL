@@ -76,7 +76,6 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, noclouds=noclou
      parlim = WHERE(parinfo[I].limited EQ 1, nLim)
      IF nLim NE 0 THEN $
         XRANGE[parlim] = parinfo[I].limits[parlim]
-     
      FOR J=0, npar-1 DO BEGIN 
         YRANGE = params[J] + [-1,1]*4*sqrt(covar[J,J])
         parlim = WHERE(parinfo[J].limited EQ 1, nLim)
@@ -107,9 +106,8 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, noclouds=noclou
                 XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, $
                 YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE
            ;; Draw the histogram...
-           plot_histo, chains[I,*], nbins=nbins, yy, xx,/NOPLOT
+           yy = histogram(chains[I,*], NBINS=nbins, LOCATIONS=xx)
            oplot, xx, yy*1.D/MAX(yy),psym=10
-
            IF NOT KEYWORD_SET(nocovar) THEN BEGIN
               ;; overplot the corresponding gaussian
               xx = DINDGEN(nPoint)/(nPoint-1)*(MAX(XRANGE)-MIN(XRANGE))+MIN(XRANGE)
