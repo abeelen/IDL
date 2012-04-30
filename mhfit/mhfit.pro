@@ -40,7 +40,7 @@ fft_chains =  (ABS(FFT(STANDARDIZE(chains,/DOUBLE), -1, DIMENSION=2)))^2*N
 fft_chains = fft_chains[*,0:N/2+1]
 
 erase
-multiplot,[1,npar], mxtitle="k"
+multiplot,[ROUND(SQRT(npar)),ROUND(npar*1./ROUND(SQRT(npar)))], mxtitle="k"
 PRINT, "parname","j*","r","conv", FORMAT='(A20,1X,A16,A22,4X,A4)'
 PRINT, REPLICATE("-",67), FORMAT='(67A1)'
 
