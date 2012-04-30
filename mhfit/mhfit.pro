@@ -446,10 +446,11 @@ FUNCTION MHFIT_STEP, xall, covar, qulim, ulim, qllim, llim, ifree=ifree, NOCHOLE
 END
 
 FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
-                  maxiter=maxiter, COVAR=covar, perror=perror, $
-                  nprint=nprint, iterproc=iterproc, $
-                  acceptRate=acceptRate, PARINFO=parinfo, quiet=quiet, $
-                  QUERY=query, SCALE=scale, CHAINS=chains
+                maxiter=maxiter, COVAR=covar, perror=perror, $
+                nprint=nprint, iterproc=iterproc, $
+                PARINFO=parinfo, quiet=quiet, nocatch=nocatch, $
+                QUERY=query, SCALE=scale, $
+                CHAINS=chains, accept=accept, lnL = lnL
 
   IF keyword_set(query) THEN return, 1
 
@@ -671,11 +672,8 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
      goto, TERMINATE
   ENDIF
   
-  ;; Likelihood defined as \propto exp (-chi2/2)
-  ;; So log Likelihood : 
-  lnL = -1.D * (mpfit_enorm(fvec)^2) / 2
-  iter = 1L
-  iLoop = 1L
+  iAccept = 1L  ;; The accepted iteration index
+  iLoop   = 1L  ;; The actual iteration index
 
   ;; Start of the MCMC....
      
@@ -683,13 +681,29 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   IF qanytied THEN mpfit_tie, xnew, ptied
   dof = (n_elements(fvec) - nfree) > 1L
 
-  prev = lnL
+  ;; chains contains parameters for all accepted iterations
+  ;; lnL  containts the log likelihood for all accepted iterations
+  ;; accept containts the actual iteration index, use to compute
+  ;; acceptance ratio
   chains = DBLARR(npar, maxiter)
-  chains[*,iter-1] = xnew
-  
-  WHILE(iter LT maxiter) DO BEGIN
+  lnL    = DBLARR(maxiter)
+  accept = DBLARR(maxiter)
 
-     acceptRate = iter*1./iLoop
+  ;; Likelihood defined as \propto exp (-chi2/2)
+  ;; So log Likelihood : 
+  prev = -1.D * (mpfit_enorm(fvec)^2) / 2
+
+  chains[*,iAccept-1] = xnew
+  accept[iAccept-1]   = iLoop
+  lnL[iAccept-1]      = prev
+  
+  WHILE(iAccept LT maxiter) DO BEGIN
+
+     acceptRate = iAccept*1./iLoop
+
+;; DEBUG
+     save, parinfo, chains, accept, lnL
+;; DEBUG
 
      IF nprint GT 0 AND iterproc NE '' THEN begin
         catch_msg = 'calling '+iterproc
@@ -698,7 +712,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
            mperr = 0
            xnew0 = xnew
            
-           call_procedure, iterproc, fcn, xnew, iter, -2*lnL, $
+           call_procedure, iterproc, fcn, xnew, iAccept, -2*prev, $
                            FUNCTARGS=fcnargs, parinfo=parinfo, quiet=quiet, $
                            dof=dof, _EXTRA=iterargs
            IF NOT KEYWORD_SET(QUIET) THEN $
@@ -734,8 +748,8 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
         goto, TERMINATE
      ENDIF
 
-     lnL = -1.D * (mpfit_enorm(fvec)^2) / 2
-     cur = lnL
+
+     cur = -1.D * (mpfit_enorm(fvec)^2) / 2
 
 ;; L_cur / L_prev GT random
 
@@ -743,8 +757,10 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
 
         prev  = cur
         xall  = xnew
-        iter += 1
-        chains[*,iter-1] = xnew
+        iAccept += 1
+        chains[*,iAccept-1] = xnew
+        accept[iAccept-1]   = iLoop
+        lnL[iAccept-1]      = prev
 
      ENDIF
 
