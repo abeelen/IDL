@@ -39,28 +39,34 @@ if (N ge 10000) then jmax=N/2.5  ;this can be varied. Should be about 10 x j*
 fft_chains =  (ABS(FFT(STANDARDIZE(chains,/DOUBLE), -1, DIMENSION=2)))^2*N
 fft_chains = fft_chains[*,0:N/2+1]
 
+
+;; Finding non fixed/tied parameters
+mpfit_parinfo, parinfo, tagnames, 'TIED',   ptied, default='', n=npar
+mpfit_parinfo, parinfo, tagnames, 'FIXED', pfixed, default=0,  n=npar
+goodChains = WHERE(pfixed EQ 0 AND STRTRIM(ptied,2) EQ '', nGoodChains)
+
 erase
-multiplot,[ROUND(SQRT(npar)),ROUND(npar*1./ROUND(SQRT(npar)))], mxtitle="k"
+multiplot,[ROUND(SQRT(nGoodChains*1.)),CEIL(nGoodChains*1./ROUND(SQRT(nGoodChains*1.)))], mxtitle="k"
 PRINT, "parname","j*","r","conv", FORMAT='(A20,1X,A16,A22,4X,A4)'
 PRINT, REPLICATE("-",67), FORMAT='(67A1)'
 
-FOR iPar = 0, npar-1 DO BEGIN
-   plot_oo, k[1:*], fft_chains[iPar,1:*],/XSTYLE,YTITLE="P(k) for "+parinfo[iPar].parname
+FOR iPar = 0, nGoodChains-1 DO BEGIN
+   plot_oo, k[1:*], fft_chains[goodChains[iPar],1:*],/XSTYLE,YTITLE="P(k) for "+parinfo[goodChains[iPar]].parname
 
    
    lparinfo = replicate({value:0.D, fixed:0, limited:[0,0], limits:[0.D,0]}, 3)
    lparinfo[0].limited = [1,0]
-   lparinfo[0].limits  = [MIN(fft_chains[iPar,1:*]),0]
+   lparinfo[0].limits  = [MIN(fft_chains[goodChains[iPar],1:*]),0]
    
    lparinfo[1].limited = [1,1]
    lparinfo[1].limits  = MINMAX(k[1:*])
    
    ;; first guesses
-   lparinfo.value = [exp(MEAN(ALOG(fft_chains[iPar,1:10]))),k[2], 1]
+   lparinfo.value = [exp(MEAN(ALOG(fft_chains[goodChains[iPar],1:10]))),k[2], 1]
    
    ;; two pass fit to avoid small scale artefacts (Dunkley et al. 2004)
-;;   fcnargs = {k: k[1:jmax],lnPk:ALOG(REFORM(fft_chains[iPar,1:jmax])), ERR:k[1:jmax]*0+1}
-   fcnargs = {k: k[1:*],lnPk:ALOG(REFORM(fft_chains[iPar,1:*])), ERR:k[1:*]*0+1}
+;;   fcnargs = {k: k[1:jmax],lnPk:ALOG(REFORM(fft_chains[goodChains[iPar],1:jmax])), ERR:k[1:jmax]*0+1}
+   fcnargs = {k: k[1:*],lnPk:ALOG(REFORM(fft_chains[goodChains[iPar],1:*])), ERR:k[1:*]*0+1}
    params = MPFIT('MYFUNCT_FFT',PARINFO=lparinfo,FUNCTARGS=fcnargs,AUTODERIVATIVE=0,PERROR=perror,/QUIET)
    lparinfo.value = params
    oplot, k, params[0]*((params[1]/k)^params[2])/((params[1]/k)^params[2]+1),color=2
@@ -68,14 +74,14 @@ FOR iPar = 0, npar-1 DO BEGIN
 
    ;; select data based on the new jmax = 10 j*
    jmax = 10*params[1]*N/(2*!pi)
-   fcnargs = {k: k[1:jmax],lnPk:ALOG(REFORM(fft_chains[iPar,1:jmax])), ERR:k[1:jmax]*0+1}
+   fcnargs = {k: k[1:jmax],lnPk:ALOG(REFORM(fft_chains[goodChains[iPar],1:jmax])), ERR:k[1:jmax]*0+1}
    params = MPFIT('MYFUNCT_FFT',PARINFO=lparinfo,FUNCTARGS=fcnargs,AUTODERIVATIVE=0,PERROR=perror,/QUIET)
    oplot, k, params[0]*((params[1]/k)^params[2])/((params[1]/k)^params[2]+1),color=3
    oplot, [1,1]*jmax*2*!pi/N,10.^!Y.CRANGE, linestyle=2, color=3
    
    js = [params[1], perror[1]]*N/(2*!pi)
    r  = [params[0], perror[0]]/N
-   print, parinfo[iPar].parname, js, r, (js[0] GT 20)?'*':'-', (r[0] LT 0.01)?'*':'-', $
+   print, parinfo[goodChains[iPar]].parname, js, r, (js[0] GT 20)?'*':'-', (r[0] LT 0.01)?'*':'-', $
           FORMAT='(A20,1X,F7.1,"+-",F4.2,3X, G10.2,"+-",G10.2,2X,": ",2A)'
 
    multiplot
@@ -696,19 +702,24 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   chains[*,iAccept-1] = xnew
   accept[iAccept-1]   = iLoop
   lnL[iAccept-1]      = prev
-  
+
+  startTime = systime(/julian)
+
   WHILE(iAccept LT maxiter) DO BEGIN
 
      acceptRate = iAccept*1./iLoop
 
-;; DEBUG
-     save, parinfo, chains, accept, lnL
-;; DEBUG
 
      IF nprint GT 0 AND iterproc NE '' THEN begin
         catch_msg = 'calling '+iterproc
         IFlag = 0L
         IF iLoop MOD nprint EQ 0 THEN begin
+
+;; DEBUG
+           save, FILENAME=date_conv( startTime, 'FITS')+'_chains.dat', parinfo, chains, accept, lnL
+;; DEBUG
+           
+
            mperr = 0
            xnew0 = xnew
            
