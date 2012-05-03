@@ -104,7 +104,7 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
 
   ;; Setting up color table (forcing color 0 to white)
   TVLCT, r_orig, g_orig, b_orig,/get
-  LOADCT, ct
+  LOADCT, ct,/SILENT
   TVLCT, r_ct, g_ct, b_ct,/get
   IF !D.NAME EQ 'PS' THEN Begin
      r_ct[0] = 255b
