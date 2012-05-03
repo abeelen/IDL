@@ -60,20 +60,23 @@ FOR iPar = 0, nGoodChains-1 DO BEGIN
    
    lparinfo[1].limited = [1,1]
    lparinfo[1].limits  = MINMAX(k[1:*])
+
+   lparinfo[2].limited = [1,1]
+   lparinfo[2].limits  = [0,5]
    
    ;; first guesses
-   lparinfo.value = [exp(MEAN(ALOG(fft_chains[goodChains[iPar],1:10]))),k[2], 1]
+   lparinfo.value = [exp(MEAN(ALOG(fft_chains[goodChains[iPar],1:10]))),200./N*2*!pi, 2]
    
    ;; two pass fit to avoid small scale artefacts (Dunkley et al. 2004)
 ;;   fcnargs = {k: k[1:jmax],lnPk:ALOG(REFORM(fft_chains[goodChains[iPar],1:jmax])), ERR:k[1:jmax]*0+1}
-   fcnargs = {k: k[1:*],lnPk:ALOG(REFORM(fft_chains[goodChains[iPar],1:*])), ERR:k[1:*]*0+1}
+   fcnargs = {k: k[1:jmax],lnPk:ALOG(REFORM(fft_chains[goodChains[iPar],1:jmax])), ERR:k[1:jmax]*0+1}
    params = MPFIT('MYFUNCT_FFT',PARINFO=lparinfo,FUNCTARGS=fcnargs,AUTODERIVATIVE=0,PERROR=perror,/QUIET)
    lparinfo.value = params
    oplot, k, params[0]*((params[1]/k)^params[2])/((params[1]/k)^params[2]+1),color=2
 ;;    oplot, [1,1]*jmax*2*!pi/N,10.^!Y.CRANGE, linestyle=2, color=2
 
    ;; select data based on the new jmax = 10 j*
-   jmax = 10*params[1]*N/(2*!pi)
+   jmax = 10*params[1]*N/(2*!pi) < (N/2+1)-1
    fcnargs = {k: k[1:jmax],lnPk:ALOG(REFORM(fft_chains[goodChains[iPar],1:jmax])), ERR:k[1:jmax]*0+1}
    params = MPFIT('MYFUNCT_FFT',PARINFO=lparinfo,FUNCTARGS=fcnargs,AUTODERIVATIVE=0,PERROR=perror,/QUIET)
    oplot, k, params[0]*((params[1]/k)^params[2])/((params[1]/k)^params[2]+1),color=3
@@ -91,7 +94,7 @@ multiplot,/default
 
 END
 
-PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, noclouds=noclouds, ct=ct,PCOVAR=Pcovar, SWIDTH=swidth,AUTO_LIMITS=auto_limits
+PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, ct=ct,PCOVAR=Pcovar, SWIDTH=swidth,AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL
 ;; Ploting markov chains.... 
 
   IF NOT KEYWORD_SET(nsigma) THEN nsigma = [1,2,3]
@@ -193,7 +196,7 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, noclouds=noclou
                 YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE
 
            ;; plot the points 
-           IF NOT KEYWORD_SET(noclouds) THEN BEGIN 
+           IF KEYWORD_SET(clouds) THEN BEGIN 
               oplot, chains[goodChains[I],*],chains[goodChains[J],*],psym=3
            ENDIF ELSE BEGIN
               width  = (MAX(XRANGE)-MIN(XRANGE))/nbins
@@ -201,8 +204,8 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, noclouds=noclou
               
               bitmap = HIST_2D(chains[goodChains[I],*],chains[goodChains[J],*], $
                                BIN1=width, BIN2=height, $
-                               MIN1=MIN(XRANGE), MAX1=MAX(XRANGE),$
-                               MIN2=MIN(YRANGE), MAX2=MAX(YRANGE))
+                               MIN1=MIN(XRANGE)+width/2,  MAX1=MAX(XRANGE)-width/2,$
+                               MIN2=MIN(YRANGE)+height/2, MAX2=MAX(YRANGE)-height/2)
               
               IF swidth GT 1 THEN $
                  bitmap = SMOOTH(bitmap, swidth, /EDGE_TRUNCATE)
@@ -245,8 +248,28 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, noclouds=noclou
         
      ENDFOR
   ENDFOR
-  
 multiplot, /default
+
+IF KEYWORD_SET(accept) OR KEYWORD_SET(LnL) THEN BEGIN
+   
+   !p.charsize /= 2 
+   multiplot,[8,8]
+   FOR I=0, 5 DO $
+      multiplot
+   IF KEYWORD_SET(accept) THEN BEGIN
+      multiplot, /DOXAXIS, /DOYAXIS
+      plot, FINDGEN(N_ELEMENTS(accept))/accept,/XSTYLE,YTITLE="Accept rate"
+      FOR I=0, 5 DO multiplot
+   ENDIF
+   IF KEYWORD_SET(LnL) THEN BEGIN 
+      multiplot, /DOXAXIS, /DOYAXIS
+      plot, LnL,/XSTYLE,YTITLE="Log L"
+   ENDIF
+   multiplot,/default
+   !p.charsize *= 2
+
+ENDIF
+
 END
 
 PRO MHFIT_PCOV, params, covar, parinfo, nsigma=nsigma
