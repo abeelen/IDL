@@ -94,7 +94,7 @@ multiplot,/default
 
 END
 
-PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, ct=ct,PCOVAR=Pcovar, SWIDTH=swidth,AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL
+PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, ct=ct,PCOVAR=Pcovar, SWIDTH=swidth,AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL, ORIG=orig, ROBUST=robust, FIT=fit
 ;; Ploting markov chains.... 
 
   IF NOT KEYWORD_SET(nsigma) THEN nsigma = [1,2,3]
@@ -128,8 +128,8 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
      MESSAGE, 'EE - All parameters are either fixed or tied'
   
   
-  MHFIT_BSTAT, chains[goodChains,*], params, perror, covar
-
+  MHFIT_BSTAT, chains[goodChains,*], params, perror, covar, ROBUST=robust, FIT=FIT
+  
   nSigma_plot = 6
 
   erase
@@ -137,7 +137,7 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
   FOR I=0, nGoodChains-1 DO BEGIN 
      
      ;; by defaults nSigma_plot sigma limits around the mean ...
-     XRANGE = params[I] + [-1,1]*sqrt(covar[I,I])*nSigma_plot
+     XRANGE = params[I] + [-1,1]*perror[I]*nSigma_plot
 
      ;; ... or use the limits from the parameters
      IF NOT KEYWORD_SET(auto_limits) THEN BEGIN
@@ -148,7 +148,7 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
      
      FOR J=0, nGoodChains-1 DO BEGIN 
         ;; by defaults nSigma_plot sigma limits around the mean ...
-        YRANGE = params[J] + [-1,1]*sqrt(covar[J,J])*nSigma_plot
+        YRANGE = params[J] + [-1,1]*perror[J]*nSigma_plot
 
         ;; ... or use the limits from the parameters
         IF NOT KEYWORD_SET(auto_limits) THEN BEGIN
@@ -158,7 +158,7 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
         ENDIF
 
         IF I GT J THEN BEGIN
-           ;; SKIP
+           ;; Upper triangle -> SKIP
            multiplot
            CONTINUE
         ENDIF
@@ -185,8 +185,12 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
            IF KEYWORD_SET(pcovar) THEN BEGIN 
               ;; overplot the corresponding gaussian
               xx = DINDGEN(nBins*10)/(nBins*10-1)*(MAX(XRANGE)-MIN(XRANGE))+MIN(XRANGE)
-              yy = exp(-(xx-params[I])^2/(2*covar[I,I]))
+              yy = exp(-(xx-params[I])^2/(2*perror[I]^2))
               oplot,xx,yy, color=5
+           ENDIF
+           IF KEYWORD_SET(orig) THEN BEGIN
+              ;; overplot starting value
+              oplot, [1,1]*parinfo[goodChains[I]].value,[0,1],linestyle=1, color=6
            ENDIF
            multiplot
         ENDIF
@@ -243,6 +247,12 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
                  oplot,x_ellipse, y_ellipse, color=5
               ENDFOR
            ENDIF
+
+           IF KEYWORD_SET(orig) THEN BEGIN
+              ;; overplot starting value
+              oplot, [parinfo[goodChains[I]].value],[parinfo[goodChains[J]].value],psym=2, color=6
+           ENDIF
+
            multiplot
         ENDIF
         
@@ -257,9 +267,13 @@ IF KEYWORD_SET(accept) OR KEYWORD_SET(LnL) THEN BEGIN
    FOR I=0, 5 DO $
       multiplot
    IF KEYWORD_SET(accept) THEN BEGIN
-      multiplot, /DOXAXIS, /DOYAXIS
+      IF NOT KEYWORD_SET(LnL) THEN $
+         multiplot, /DOXAXIS, /DOYAXIS $
+      ELSE $
+         multiplot, /DOYAXIS
+                       
       plot, FINDGEN(N_ELEMENTS(accept))/accept,/XSTYLE,YTITLE="Accept rate"
-      FOR I=0, 5 DO multiplot
+      FOR I=0, 6 DO multiplot
    ENDIF
    IF KEYWORD_SET(LnL) THEN BEGIN 
       multiplot, /DOXAXIS, /DOYAXIS
@@ -393,7 +407,7 @@ PRO MHFIT_PCENT, chains, percentils, PERCENT=percent,QUIET=quiet, PARINFO=parinf
 
 END 
 
-PRO MHFIT_BSTAT, chains, params, perror, covar
+PRO MHFIT_BSTAT, chains, params, perror, covar, ROBUST=robust, FIT=FIT
 ;; Basic statistic on the chains
 
   s       = size(chains)
@@ -402,30 +416,52 @@ PRO MHFIT_BSTAT, chains, params, perror, covar
   
   params = DBLARR(npar)
   covar  = DBLARR(npar,npar)
+  perror = DBLARR(npar)
   
-  FOR I=0, npar-1 DO $
-     params[I] = TOTAL(chains[I,*])/maxiter
-
-  FOR I=0, npar-1 DO BEGIN
-     FOR J=I, npar-1 DO BEGIN
-    ; Adapted from
-    ; Numerically-stable "two-pass" formula, which offers less
-    ; round-off error. Page 613, Numerical Recipes in C.
-        resid_I = chains[I,*]-params[I]
-        resid_J = chains[J,*]-params[J]
-        covar[I,J] = ( TOTAL( resid_I*resid_J) - $
-                       TOTAL(resid_I)*TOTAL(resid_J)/maxiter ) /(maxiter-1)
-        covar[J,I] = covar[I,J]
+  IF NOT KEYWORD_SET(robust) AND NOT KEYWORD_SET(fit) THEN BEGIN
+     FOR I=0, npar-1 DO $
+        params[I] = TOTAL(chains[I,*])/maxiter
+     
+     FOR I=0, npar-1 DO BEGIN
+        FOR J=I, npar-1 DO BEGIN
+                                ; Adapted from
+                                ; Numerically-stable "two-pass" formula, which offers less
+                                ; round-off error. Page 613, Numerical Recipes in C.
+           resid_I = chains[I,*]-params[I]
+           resid_J = chains[J,*]-params[J]
+           covar[I,J] = ( TOTAL( resid_I*resid_J) - $
+                          TOTAL(resid_I)*TOTAL(resid_J)/maxiter ) /(maxiter-1)
+           covar[J,I] = covar[I,J]
+        ENDFOR
      ENDFOR
-  ENDFOR
+     
+     ;; Compute errors in parameters
+     i = lindgen(npar)
+     wh = where(covar(i,i) GE 0, ct)
+     if ct GT 0 THEN $
+        perror(wh) = sqrt(covar(wh, wh))
+  ENDIF
+  IF KEYWORD_SET(fit) THEN BEGIN 
+     FOR I=0, npar-1 DO BEGIN
+        yy = histogram(chains[I,*], NBINS=200,LOCATIONS=xx, MIN=MIN(chains[I,*]), MAX=MAX(chains[I,*]))
+        dummy = gaussfit(xx, yy, results, nterms=3)
+        params[I]  = results[1]
+        perror[I]  = results[2]
+        covar[I,I] = results[2]^2
+     ENDFOR
+  ENDIF
+
+  IF KEYWORD_SET(robust) THEN BEGIN
+     FOR I=0, npar-1 DO BEGIN
+        mean = BIWEIGHT_MEAN(chains[I,*],sigma)
+        params[I] = mean
+        perror[I] = sigma
+        covar[I,I] = sigma^2
+     ENDFOR
+     
+  ENDIF
   
-  ;; Compute errors in parameters
-  i = lindgen(npar)
-  perror = replicate(abs(covar(0))*0., npar)
-  wh = where(covar(i,i) GE 0, ct)
-  if ct GT 0 THEN $
-     perror(wh) = sqrt(covar(wh, wh))
-  
+
 END
 
 FUNCTION MHFIT_STEP, xall, covar, qulim, ulim, qllim, llim, ifree=ifree, NOCHOLESKY=NOCHOLESKY
@@ -739,7 +775,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
         IF iLoop MOD nprint EQ 0 THEN begin
 
 ;; DEBUG
-           save, FILENAME=date_conv( startTime, 'FITS')+'_chains.dat', parinfo, chains, accept, lnL
+           save, FILENAME=date_conv( startTime, 'FITS')+'_chains.dat', parinfo, chains, accept, lnL,/COMPRESS
 ;; DEBUG
            
 
