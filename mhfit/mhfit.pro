@@ -94,7 +94,36 @@ multiplot,/default
 
 END
 
-PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, ct=ct,PCOVAR=Pcovar, SWIDTH=swidth,AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL, ORIG=orig, ROBUST=robust, FIT=fit
+PRO MHFIT_PELIPSE, center, covar, nsigma=nsigma, color=color
+
+  IF NOT KEYWORD_SET(nsigma) THEN nsigma = [1]
+
+
+  ;; Set up to draw ellipsis later
+  nPoint= 100
+  theta    = 2D0*!PI*dindgen(nPoint)/(nPoint-1)
+  x_circle = cos(theta)
+  y_circle = sin(theta)
+  
+;; Find eigen values and vector of the sub covariance matrix 
+  eigenvalues = sqrt(eigenql(covar,eigenvectors=eigenvector,/double))
+  
+  FOR iSigma = 0, N_ELEMENTS(nsigma)-1 DO BEGIN 
+     x_ellipse = center[0]+$
+                 x_circle*nsigma[iSigma]*eigenvalues[0]*eigenvector[0,0]+ $
+                 y_circle*nsigma[iSigma]*eigenvalues[1]*eigenvector[0,1]
+     y_ellipse = center[1]+$
+                 x_circle*nsigma[iSigma]*eigenvalues[0]*eigenvector[1,0]+ $
+                 y_circle*nsigma[iSigma]*eigenvalues[1]*eigenvector[1,1]
+     
+     
+     oplot,x_ellipse, y_ellipse, color=color
+  ENDFOR
+
+
+END
+
+PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, ct=ct,ROBUST=robust, FIT=fit, SWIDTH=swidth, PCOVAR=Pcovar, AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL, ORIG=orig, INCOVAR=incovar
 ;; Ploting markov chains.... 
 
   IF NOT KEYWORD_SET(nsigma) THEN nsigma = [1,2,3]
@@ -112,12 +141,6 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
      b_ct[0] = 255b
   ENDIF
   TVLCT, r_orig, g_orig, b_orig
-
-  ;; Set up to draw ellipsis later
-  nPoint= 100
-  theta    = 2D0*!PI*dindgen(nPoint)/(nPoint-1)
-  x_circle = cos(theta)
-  y_circle = sin(theta)
 
   ;; Finding non fixed/tied parameters
   mpfit_parinfo, parinfo, tagnames, 'TIED',   ptied, default='', n=npar
@@ -191,6 +214,16 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
            IF KEYWORD_SET(orig) THEN BEGIN
               ;; overplot starting value
               oplot, [1,1]*parinfo[goodChains[I]].value,[0,1],linestyle=1, color=6
+              IF parinfo[goodChains[I]].limited[0] EQ 1 THEN $
+                 oplot, [1,1]*parinfo[goodChains[I]].limits[0], !Y.CRANGE, linestyle=2,color=6
+              IF parinfo[goodChains[I]].limited[1] EQ 1 THEN $
+                 oplot, [1,1]*parinfo[goodChains[I]].limits[1], !Y.CRANGE, linestyle=2,color=6
+
+              IF KEYWORD_SET(INCOVAR) THEN BEGIN
+                 xx = DINDGEN(nBins*10)/(nBins*10-1)*(MAX(XRANGE)-MIN(XRANGE))+MIN(XRANGE)
+                 yy = exp(-(xx-parinfo[goodChains[I]].value)^2/(2*incovar[goodChains[I], goodChains[I]]) )
+                 oplot, xx, yy, color=6
+              ENDIF
            ENDIF
            multiplot
         ENDIF
@@ -232,25 +265,33 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
               
               lcovar = [ [ covar[I,I], covar[J,I]],$
                          [ covar[I,J], covar[J,J]] ]
-;; Find eigen values and vector of the sub covariance matrix 
-              eigenvalues = sqrt(eigenql(lcovar,eigenvectors=eigenvector,/double))
-              
-              FOR iSigma = 0, N_ELEMENTS(nsigma)-1 DO BEGIN 
-                 x_ellipse = params[I]+$
-                             x_circle*nsigma[iSigma]*eigenvalues[0]*eigenvector[0,0]+ $
-                             y_circle*nsigma[iSigma]*eigenvalues[1]*eigenvector[0,1]
-                 y_ellipse = params[J]+$
-                             x_circle*nsigma[iSigma]*eigenvalues[0]*eigenvector[1,0]+ $
-                             y_circle*nsigma[iSigma]*eigenvalues[1]*eigenvector[1,1]
-                 
-                 
-                 oplot,x_ellipse, y_ellipse, color=5
-              ENDFOR
+
+              MHFIT_PELIPSE, [params[I],params[J]], lcovar, nsigma=nsigma, color=5
+
            ENDIF
 
            IF KEYWORD_SET(orig) THEN BEGIN
               ;; overplot starting value
               oplot, [parinfo[goodChains[I]].value],[parinfo[goodChains[J]].value],psym=2, color=6
+              IF parinfo[goodChains[I]].limited[0] EQ 1 THEN $
+                 oplot, [1,1]*parinfo[goodChains[I]].limits[0], !Y.CRANGE, linestyle=2,color=6
+              IF parinfo[goodChains[I]].limited[1] EQ 1 THEN $
+                 oplot, [1,1]*parinfo[goodChains[I]].limits[1], !Y.CRANGE, linestyle=2,color=6
+              IF parinfo[goodChains[J]].limited[0] EQ 1 THEN $
+                 oplot, !X.CRANGE, [1,1]*parinfo[goodChains[J]].limits[0], linestyle=2,color=6
+              IF parinfo[goodChains[J]].limited[1] EQ 1 THEN $
+                 oplot, !X.CRANGE, [1,1]*parinfo[goodChains[J]].limits[1], linestyle=2,color=6
+
+              IF KEYWORD_SET(INCOVAR) THEN BEGIN
+                 
+                 IF incovar[goodChains[I],goodChains[J]] NE 0 AND $
+                    incovar[goodChains[J],goodChains[I]] NE 0 THEN BEGIN
+                    lcovar = [ [ incovar[goodChains[I],goodChains[I]], incovar[goodChains[J],goodChains[I]]],$
+                               [ incovar[goodChains[I],goodChains[J]], incovar[goodChains[J],goodChains[J]]] ]
+                    MHFIT_PELIPSE, [parinfo[goodChains[I]].value,parinfo[goodChains[J]].value], lcovar, nsigma=nsigma, color=6
+                 ENDIF
+                 
+              ENDIF
            ENDIF
 
            multiplot
@@ -398,7 +439,7 @@ PRO MHFIT_PCENT, chains, percentils, PERCENT=percent,QUIET=quiet, PARINFO=parinf
               parname = strmid(parinfo[iChain].parname,0,25)
            endif
         ENDIF
-        PRINT,  parname, mean, err, FORMAT='(A25," = ",G10.6, " + ", G10.6, " - ", G10.6)'
+        PRINT,  parname, mean, err, FORMAT='(A25," = ",G10.3, " + ", G10.3, " - ", G10.3)'
         
      ENDFOR
      
@@ -515,7 +556,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
                 nprint=nprint, iterproc=iterproc, $
                 PARINFO=parinfo, quiet=quiet, nocatch=nocatch, $
                 QUERY=query, SCALE=scale, $
-                CHAINS=chains, accept=accept, lnL = lnL
+                CHAINS=chains, accept=accept, lnL = lnL, SAVE_STEP=save_step
 
   IF keyword_set(query) THEN return, 1
 
@@ -775,7 +816,8 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
         IF iLoop MOD nprint EQ 0 THEN begin
 
 ;; DEBUG
-           save, FILENAME=date_conv( startTime, 'FITS')+'_chains.dat', parinfo, chains, accept, lnL,/COMPRESS
+           IF KEYWORD_SET(save_step) THEN  $
+              save, FILENAME=date_conv( startTime, 'FITS')+'_chains.dat', parinfo, incovar, fcnargs, chains, accept, lnL,/COMPRESS
 ;; DEBUG
            
 
