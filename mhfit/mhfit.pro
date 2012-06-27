@@ -1,3 +1,167 @@
+;+
+; NAME: 
+;      MHFIT
+;
+;
+; PURPOSE:
+;      Perform Metropolis Hasting Markov Chain to perfom fit
+;
+;
+; CATEGORY:
+;      Fitting
+;
+;
+; CALLING SEQUENCE:
+;      parms = MHFIT(MYFUNCT, start_parms, INCOVAR=incovar
+;                    FUNCTARGS=fcnargs, MAXITER=maxiter, 
+;                    QUIET=quiet, COVAR=covar, perror=perror, $
+;                    NPRINT=nprint, ITERPROC=iterproc, $
+;                    PARINFO=parinfo, SCALE=scale, $
+;                    CHAINS=chains, ACCEPT=accept, lnL = lnL, $
+;                    SAVE_STEP=save_step, RESTORE_STEP=restore_step
+;
+; INPUTS:
+;   MYFUNCT - a string variable containing the name of the function to
+;             be minimized.  The function should return the weighted
+;             deviations between the model and the data, as described
+;             above.
+;
+;             For EXTERNAL evaluation of functions, this parameter
+;             should be set to a value of "(EXTERNAL)".
+;
+;   START_PARAMS - An array of starting values for each of the
+;                  parameters of the model.  The number of parameters
+;                  should be fewer than the number of measurements.
+;                  Also, the parameters should have the same data type
+;                  as the measurements (double is preferred).
+;
+;                  This parameter is optional if the PARINFO keyword
+;                  is used (but see PARINFO).  The PARINFO keyword
+;                  provides a mechanism to fix or constrain individual
+;                  parameters.  If both START_PARAMS and PARINFO are
+;                  passed, then the starting *value* is taken from
+;                  START_PARAMS, but the *constraints* are taken from
+;                  PARINFO.
+;   INCOVAR      - An NxN Matric containing the input covariance
+;                  Matrix for the sampling.
+; 
+;   FUNCTARGS - A structure which contains the parameters to be passed
+;               to the user-supplied function specified by MYFUNCT via
+;               the _EXTRA mechanism.  This is the way you can pass
+;               additional data to your user-supplied function without
+;               using common blocks.
+;
+;               Consider the following example:
+;                if FUNCTARGS = { XVAL:[1.D,2,3], YVAL:[1.D,4,9],
+;                                 ERRVAL:[1.D,1,1] }
+;                then the user supplied function should be declared
+;                like this:
+;                FUNCTION MYFUNCT, P, XVAL=x, YVAL=y, ERRVAL=err
+;
+;               By default, no extra parameters are passed to the
+;               user-supplied function, but your function should
+;               accept *at least* one keyword parameter.  [ This is to
+;               accomodate a limitation in IDL's _EXTRA
+;               parameter-passing mechanism. ]
+;
+;
+; OPTIONAL INPUTS:
+;
+;
+;
+; KEYWORD PARAMETERS:
+;
+;   MAXITER - The maximum number of iterations to perform.  If the
+;             number is exceeded, then the STATUS value is set to 5
+;             and MPFIT returns.
+;             Default: 10000 iterations
+;
+;   QUIET    - set this keyword when no textual output should be printed
+;              by MHFIT
+;
+;
+;   PARINFO  - See MPFIT documention, accepted parameters :
+;     .VALUE - the starting parameter value (but see the START_PARAMS
+;              parameter for more information).
+;  
+;     .FIXED - a boolean value, whether the parameter is to be held
+;              fixed or not.  Fixed parameters are not varied by
+;              MPFIT, but are passed on to MYFUNCT for evaluation.
+;  
+;     .LIMITED - a two-element boolean array.  If the first/second
+;                element is set, then the parameter is bounded on the
+;                lower/upper side.  A parameter can be bounded on both
+;                sides.  Both LIMITED and LIMITS must be given
+;                together.
+;  
+;     .LIMITS - a two-element float or double array.  Gives the
+;               parameter limits on the lower and upper sides,
+;               respectively.  Zero, one or two of these values can be
+;               set, depending on the values of LIMITED.  Both LIMITED
+;               and LIMITS must be given together.
+;  
+;     .PARNAME - a string, giving the name of the parameter.  The
+;                fitting code of MPFIT does not use this tag in any
+;                way.  However, the default ITERPROC will print the
+;                parameter name if available.
+;
+;     .TIED - a string expression which "ties" the parameter to other
+;             free or fixed parameters.  Any expression involving
+;             constants and the parameter array P are permitted.
+;             Example: if parameter 2 is always to be twice parameter
+;             1 then use the following: parinfo(2).tied = '2 * P(1)'.
+;             Since they are totally constrained, tied parameters are
+;             considered to be fixed; no errors are computed for them.
+;             [ NOTE: the PARNAME can't be used in expressions. ]
+;  
+;
+;     .MPPRINT - if set to 1, then the default ITERPROC will print the
+;                parameter value.  If set to 0, the parameter value
+;                will not be printed.  This tag can be used to
+;                selectively print only a few parameter values out of
+;                many.  Default: 1 (all parameters printed)
+;
+;     .MPFORMAT - IDL format string to print the parameter within
+;                 ITERPROC.  Default: '(G20.6)' An empty string will
+;                 also use the default.
+;
+;
+;
+; OUTPUTS:
+;  
+;
+;
+; OPTIONAL OUTPUTS:
+;
+;   COVAR - the covariance matrix for the set of parameters returned
+;           by MHFIT. 
+;
+;   PERROR - The formal 1-sigma errors in each parameter, computed
+;            from the covariance matrix.  
+;
+; COMMON BLOCKS:
+;
+;
+;
+; SIDE EFFECTS:
+;
+;
+;
+; RESTRICTIONS:
+;
+;
+;
+; PROCEDURE:
+;   MHFIT need to have access to Markwardt IDL Library and the IDL Astronomy User's Library
+;
+;
+; EXAMPLE:
+;
+;
+;
+; MODIFICATION HISTORY:
+;   2012-06 Beelen. A Creation
+;-
 PRO mhfit_dummy
   ;; Enclose in a procedure so these are not defined in the main level
   FORWARD_FUNCTION myfunct_fft, mhfit_step, mhfit, mpfit_call, mpfit_enorm, mpfit
@@ -5,6 +169,8 @@ END
 
 
 FUNCTION MYFUNCT_FFT, p,dp,  k=K, lnPk=lnPk, Err=err
+;; Helper function to fit the fft of the chains
+
   P_0   = p[0]
   k_s   = p[1]
   alpha = p[2]
@@ -25,6 +191,7 @@ FUNCTION MYFUNCT_FFT, p,dp,  k=K, lnPk=lnPk, Err=err
 END
 
 PRO MHFIT_ACHAIN, chains, parinfo
+;; Analyse chains for convergence (FFT fits)
 
 s    = size(chains)
 npar = s[1]
@@ -95,6 +262,7 @@ multiplot,/default
 END
 
 PRO MHFIT_PELIPSE, center, covar, nsigma=nsigma, color=color
+;; Helper function to plot an elipse
 
   IF NOT KEYWORD_SET(nsigma) THEN nsigma = [1]
 
@@ -131,6 +299,9 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
   IF NOT KEYWORD_SET(ct)     THEN ct  = 0
   IF NOT KEYWORD_SET(swidth) THEN swidth = 1
 
+  npar = N_ELEMENTS(chains[*,0])
+
+
   ;; Setting up color table (forcing color 0 to white)
   TVLCT, r_orig, g_orig, b_orig,/get
   LOADCT, ct,/SILENT
@@ -150,7 +321,19 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
   IF nGoodChains EQ 0 THEN $
      MESSAGE, 'EE - All parameters are either fixed or tied'
   
-  
+  parname = 'P('+strtrim(LINDGEN(npar),2)+')'
+  IF  N_ELEMENTS(parinfo) GT 0 THEN BEGIN
+     parinfo_tags = tag_names(parinfo)
+     wh = where(parinfo_tags EQ 'PARNAME', ct)
+     IF ct EQ 1 THEN BEGIN
+        wh = where(parinfo.parname NE '', ct)
+        IF ct GT 0 THEN $
+           parname(wh) = strmid(parinfo(wh).parname,0,25)
+     ENDIF
+  ENDIF
+
+
+
   MHFIT_BSTAT, chains[goodChains,*], params, perror, covar, ROBUST=robust, FIT=FIT
   
   nSigma_plot = 6
@@ -164,9 +347,13 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
 
      ;; ... or use the limits from the parameters
      IF NOT KEYWORD_SET(auto_limits) THEN BEGIN
-        parlim = WHERE(parinfo[goodChains[I]].limited EQ 1, nLim)
-        IF nLim NE 0 THEN $
-           XRANGE[parlim] = parinfo[goodChains[I]].limits[parlim]
+        mpfit_parinfo, parinfo, tagnames, 'LIMITED', limited, status=st1
+        mpfit_parinfo, parinfo, tagnames, 'LIMITS',  limits,  status=st2
+        
+        IF st1 EQ 1 AND st2 EQ 1 THEN BEGIN
+           parlim = WHERE(limited EQ 1, nLim)
+           XRANGE[parlim] = limits[parlim]
+        ENDIF
      ENDIF
      
      FOR J=0, nGoodChains-1 DO BEGIN 
@@ -175,9 +362,13 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
 
         ;; ... or use the limits from the parameters
         IF NOT KEYWORD_SET(auto_limits) THEN BEGIN
-           parlim = WHERE(parinfo[goodChains[J]].limited EQ 1, nLim)
-           IF nLim NE 0 THEN $
-              YRANGE[parlim] = parinfo[goodChains[J]].limits[parlim]
+           mpfit_parinfo, parinfo, tagnames, 'LIMITED', limited, status=st1
+           mpfit_parinfo, parinfo, tagnames, 'LIMITS',  limits,  status=st2
+           
+           IF st1 EQ 1 AND st2 EQ 1 THEN BEGIN
+              parlim = WHERE(limited EQ 1, nLim)
+              YRANGE[parlim] = limits[parlim]
+           ENDIF
         ENDIF
 
         IF I GT J THEN BEGIN
@@ -187,12 +378,12 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
         ENDIF
 
         IF I EQ 0 THEN $
-           YTITLE=parinfo[goodChains[J]].parname $
+           YTITLE=parname[goodChains[J]] $
         ELSE $
            YTITLE=""
    
         IF J EQ nGoodChains-1 THEN $
-           XTITLE=parinfo[goodChains[I]].parname $
+           XTITLE=parname[goodChains[I]] $
         ELSE $
            XTITLE=""
                          
@@ -302,29 +493,29 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
         
      ENDFOR
   ENDFOR
-multiplot, /default
+  multiplot, /default
 
-IF KEYWORD_SET(accept) OR KEYWORD_SET(LnL) THEN BEGIN
+  IF KEYWORD_SET(accept) OR KEYWORD_SET(LnL) THEN BEGIN
    
-   !p.charsize /= 2 
-   multiplot,[8,8]
-   FOR I=0, 5 DO $
-      multiplot
-   IF KEYWORD_SET(accept) THEN BEGIN
-      IF NOT KEYWORD_SET(LnL) THEN $
-         multiplot, /DOXAXIS, /DOYAXIS $
-      ELSE $
-         multiplot, /DOYAXIS
+     !p.charsize /= 2 
+     multiplot,[8,8]
+     FOR I=0, 5 DO $
+        multiplot
+     IF KEYWORD_SET(accept) THEN BEGIN
+        IF NOT KEYWORD_SET(LnL) THEN $
+           multiplot, /DOXAXIS, /DOYAXIS $
+        ELSE $
+           multiplot, /DOYAXIS
                        
-      plot, FINDGEN(N_ELEMENTS(accept))/accept,/XSTYLE,YTITLE="Accept rate"
-      FOR I=0, 6 DO multiplot
+        plot, FINDGEN(N_ELEMENTS(accept))/accept,/XSTYLE,YTITLE="Accept rate"
+        FOR I=0, 6 DO multiplot
    ENDIF
-   IF KEYWORD_SET(LnL) THEN BEGIN 
-      multiplot, /DOXAXIS, /DOYAXIS
-      plot, LnL,/XSTYLE,YTITLE="Log L"
-   ENDIF
-   multiplot,/default
-   !p.charsize *= 2
+     IF KEYWORD_SET(LnL) THEN BEGIN 
+        multiplot, /DOXAXIS, /DOYAXIS
+        plot, LnL,/XSTYLE,YTITLE="Log L"
+     ENDIF
+     multiplot,/default
+     !p.charsize *= 2
 
 ENDIF
 
@@ -343,6 +534,18 @@ PRO MHFIT_PCOV, params, covar, parinfo, nsigma=nsigma
 
   npar = N_ELEMENTS(params)
 
+  parname = 'P('+strtrim(LINDGEN(npar),2)+')'
+  IF  N_ELEMENTS(parinfo) GT 0 THEN BEGIN
+     parinfo_tags = tag_names(parinfo)
+     wh = where(parinfo_tags EQ 'PARNAME', ct)
+     IF ct EQ 1 THEN BEGIN
+        wh = where(parinfo.parname NE '', ct)
+        IF ct GT 0 THEN $
+           parname(wh) = strmid(parinfo(wh).parname,0,25)
+     ENDIF
+  ENDIF
+
+
   erase
   MULTIPLOT,[npar,npar],/ROWMAJOR
   FOR I=0, npar-1 DO BEGIN 
@@ -357,12 +560,12 @@ PRO MHFIT_PCOV, params, covar, parinfo, nsigma=nsigma
         ENDIF
 
         IF I EQ 0 THEN $
-           YTITLE=parinfo[J].parname $
+           YTITLE=parname[J] $
         ELSE $
            YTITLE=""
    
         IF J EQ npar-1 THEN $
-           XTITLE=parinfo[I].parname $
+           XTITLE=parname[I] $
         ELSE $
            XTITLE=""
                          
@@ -412,7 +615,7 @@ multiplot, /default
 END
 
 PRO MHFIT_PCENT, chains, percentils, PERCENT=percent,QUIET=quiet, PARINFO=parinfo
-
+;; compute percentil statistics
 
   IF NOT KEYWORD_SET(percent) THEN percent = [erfc(1./sqrt(2))/2, 0.5, 1-erfc(1./sqrt(2))/2]
  
@@ -438,7 +641,7 @@ PRO MHFIT_PCENT, chains, percentils, PERCENT=percent,QUIET=quiet, PARINFO=parinf
         IF KEYWORD_SET(parinfo) THEN BEGIN
            parinfo_tags = tag_names(parinfo)
            wh = where(parinfo_tags EQ 'PARNAME', ct)
-           if ct EQ 1 THEN begin
+           if ct EQ 1 THEN BEGIN
               parname = strmid(parinfo[iChain].parname,0,25)
            endif
         ENDIF
@@ -452,7 +655,7 @@ PRO MHFIT_PCENT, chains, percentils, PERCENT=percent,QUIET=quiet, PARINFO=parinf
 END 
 
 PRO MHFIT_BSTAT, chains, params, perror, covar, ROBUST=robust, FIT=FIT
-;; Basic statistic on the chains
+;; Basic statistic on the chains (mean/variance/covariance)
 
   s       = size(chains)
   npar    = s[1]
@@ -555,19 +758,23 @@ FUNCTION MHFIT_STEP, xall, covar, qulim, ulim, qllim, llim, ifree=ifree, NOCHOLE
 END
 
 FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
-                maxiter=maxiter, COVAR=covar, perror=perror, $
+                MAXITER=maxiter, COVAR=covar, perror=perror, $
                 nprint=nprint, iterproc=iterproc, $
-                PARINFO=parinfo, quiet=quiet, nocatch=nocatch, $
+                PARINFO=parinfo, quiet=quiet, $
                 QUERY=query, SCALE=scale, $
-                CHAINS=chains, accept=accept, lnL = lnL, SAVE_STEP=save_step
+                CHAINS=chains, accept=accept, lnL = lnL, $
+                SAVE_STEP=save_step, RESTORE_STEP=restore_step
+;; Main function
 
   IF keyword_set(query) THEN return, 1
 
   IF n_elements(iterproc) EQ 0 THEN iterproc = 'MPFIT_DEFITER'
   IF n_elements(maxiter)  EQ 0 THEN maxiter  = 10000L
-  IF n_elements(nprint)   EQ 0 THEN nprint   = maxiter/10
+  IF n_elements(nprint)   EQ 0 THEN nprint   = maxiter/5
 
-  IF n_params() EQ 0 OR NOT KEYWORD_SET(incovar) THEN begin
+  IF KEYWORD_SET(restore_step) THEN RESTORE, restore_step
+
+  IF n_params() EQ 0 OR NOT KEYWORD_SET(incovar) THEN BEGIN
       message, "USAGE: PARMS = MPFIT('MYFUNCT', START_PARAMS, INCOVAR=COVAR ... )", /info
       return, !values.d_nan
    ENDIF
@@ -577,7 +784,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   
   ;; Detect MPFIT and crash IF it was not found
   catch, catcherror
-  IF catcherror NE 0 THEN begin
+  IF catcherror NE 0 THEN BEGIN
      MPFIT_NOTFOUND:
      catch, /cancel
      message, 'ERROR: the required function MPFIT must be in your IDL path', /info
@@ -586,7 +793,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   IF mpfit(/query) NE 1 THEN goto, MPFIT_NOTFOUND
   catch, /cancel
   
-  IF n_params() EQ 0 THEN begin
+  IF n_params() EQ 0 THEN BEGIN
      message, "USAGE: PARMS = MHFIT('MYFUNCT', X, Y, ERR, "+ $
               "START_PARAMS, ... )", /info
      return, !values.d_nan
@@ -600,7 +807,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   
   ;; Parse FCN function name - be sure it is a scalar string
   sz = size(fcn)
-  IF sz[0] NE 0 THEN begin
+  IF sz[0] NE 0 THEN BEGIN
      FCN_NAME:
      errmsg = 'ERROR: MYFUNCT must be a scalar string'
      goto, TERMINATE
@@ -611,20 +818,20 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   catch_msg = 'parsing input parameters'
   ;; Parameters can either be stored in parinfo, or x.  Parinfo takes
   ;; precedence IF it exists.
-  IF n_elements(xall) EQ 0 AND n_elements(parinfo) EQ 0 THEN begin
+  IF n_elements(xall) EQ 0 AND n_elements(parinfo) EQ 0 THEN BEGIN
      errmsg = 'ERROR: must pass parameters in P or PARINFO'
      goto, TERMINATE
   ENDIF
   
   ;; Be sure that PARINFO is of the right type
-  IF n_elements(parinfo) GT 0 THEN begin
+  IF n_elements(parinfo) GT 0 THEN BEGIN
      parinfo_size = size(parinfo)
-     IF parinfo_size[parinfo_size[0]+1] NE 8 THEN begin
+     IF parinfo_size[parinfo_size[0]+1] NE 8 THEN BEGIN
         errmsg = 'ERROR: PARINFO must be a structure.'
         goto, TERMINATE
      ENDIF
      IF n_elements(xall) GT 0 AND n_elements(xall) NE n_elements(parinfo) $
-     THEN begin
+     THEN BEGIN
         errmsg = 'ERROR: number of elements in PARINFO and P must agree'
         goto, TERMINATE
      ENDIF
@@ -632,9 +839,9 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   
   ;; IF the parameters were not specIFied at the command line, THEN
   ;; extract them from PARINFO
-  IF n_elements(xall) EQ 0 THEN begin
+  IF n_elements(xall) EQ 0 THEN BEGIN
      mpfit_parinfo, parinfo, tagnames, 'VALUE', xall, status=status
-     IF status EQ 0 THEN begin
+     IF status EQ 0 THEN BEGIN
         errmsg = 'ERROR: either P or PARINFO(*).VALUE must be supplied.'
         goto, TERMINATE
      ENDIF
@@ -661,7 +868,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   
   ;; Finish up the free parameters
   iFree = where(pfixed NE 1, nfree)
-  IF nfree EQ 0 THEN begin
+  IF nfree EQ 0 THEN BEGIN
      errmsg = 'ERROR: no free parameters'
      goto, TERMINATE
   ENDIF
@@ -689,19 +896,19 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   ;; LIMITED parameters ?
   mpfit_parinfo, parinfo, tagnames, 'LIMITED', limited, status=st1
   mpfit_parinfo, parinfo, tagnames, 'LIMITS',  limits,  status=st2
-  IF st1 EQ 1 AND st2 EQ 1 THEN begin
+  IF st1 EQ 1 AND st2 EQ 1 THEN BEGIN
      
      ;; Error checking on limits in parinfo
      wh = where((limited[0,*] AND xall LT limits[0,*]) OR $
                 (limited[1,*] AND xall GT limits[1,*]), ct)
-     IF ct GT 0 THEN begin
+     IF ct GT 0 THEN BEGIN
         errmsg = 'ERROR: parameters are not within PARINFO limits'
         goto, TERMINATE
      ENDIF
      wh = where(limited[0,*] AND limited[1,*] AND $
                 limits[0,*] GE limits[1,*] AND $
                 pfixed EQ 0, ct)
-     IF ct GT 0 THEN begin
+     IF ct GT 0 THEN BEGIN
         errmsg = 'ERROR: PARINFO parameter limits are not consistent'
         goto, TERMINATE
      ENDIF
@@ -716,7 +923,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
      wh = where(qulim OR qllim, ct)
      IF ct GT 0 THEN qanylim = 1 else qanylim = 0
      
-  ENDIF else begin
+  ENDIF else BEGIN
      
      ;; Fill in local variables with dummy values
      qulim = lonarr(nfree)
@@ -739,7 +946,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   catch_msg = 'calling '+fcn
   fvec = mpfit_call(fcn, xnew, _EXTRA=fcnargs)
   IFlag = mperr
-  IF IFlag LT 0 THEN begin
+  IF IFlag LT 0 THEN BEGIN
      errmsg = 'ERROR: first call to "'+fcn+'" failed'
      goto, TERMINATE
   ENDIF
@@ -757,8 +964,8 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   ;; type.  Otherwise the MACHAR-based evaluation will fail.
   catch_msg = 'checking parameter data'
   tp = szx[szx[0]+1]
-  IF tp NE 4 AND tp NE 5 THEN begin
-     IF NOT keyword_set(quiet) THEN begin
+  IF tp NE 4 AND tp NE 5 THEN BEGIN
+     IF NOT keyword_set(quiet) THEN BEGIN
         message, 'WARNING: input parameters must be at least FLOAT', /info
         message, '         (converting parameters to FLOAT)', /info
      ENDIF
@@ -766,8 +973,8 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
      xnew = float(x)
      szx = size(x)
   ENDIF
-  IF isdouble AND tp NE 5 THEN begin
-     IF NOT keyword_set(quiet) THEN begin
+  IF isdouble AND tp NE 5 THEN BEGIN
+     IF NOT keyword_set(quiet) THEN BEGIN
         message, 'WARNING: data is DOUBLE but parameters are FLOAT', /info
         message, '         (converting parameters to DOUBLE)', /info
      ENDIF
@@ -776,7 +983,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   ENDIF
   
   m = n_elements(fvec)
-  IF (m LT n) THEN begin
+  IF (m LT n) THEN BEGIN
      errmsg = 'ERROR: number of parameters must not exceed data'
      goto, TERMINATE
   ENDIF
@@ -808,19 +1015,27 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
 
   startTime = systime(/julian)
 
+  IF KEYWORD_SET(restore_step) THEN BEGIN 
+     RESTORE, restore_step
+     good = WHERE(accept NE 0, nGood)
+     iLoop   = good[nGood-1]
+     iAccept = accept[iLoop]
+     xnew    = chains[*,nGood-1]
+  ENDIF
+
   WHILE(iAccept LT maxiter) DO BEGIN
 
      acceptRate = iAccept*1./iLoop
 
 
-     IF nprint GT 0 AND iterproc NE '' THEN begin
+     IF nprint GT 0 AND iterproc NE '' THEN BEGIN
         catch_msg = 'calling '+iterproc
         IFlag = 0L
-        IF iLoop MOD nprint EQ 0 THEN begin
+        IF iLoop MOD nprint EQ 0 THEN BEGIN
 
 ;; DEBUG
            IF KEYWORD_SET(save_step) THEN  $
-              save, FILENAME=date_conv( startTime, 'FITS')+'_chains.dat', parinfo, incovar, fcnargs, chains, accept, lnL,/COMPRESS
+              save, FILENAME=date_conv( startTime, 'FITS')+'_chains.dat', parinfo, incovar, fcnargs, chains, accept, lnL, startTime, maxiter, /COMPRESS
 ;; DEBUG
            
 
@@ -836,13 +1051,13 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
            IFlag = mperr
            
            ;; Check for user termination
-           IF IFlag LT 0 THEN begin  
+           IF IFlag LT 0 THEN BEGIN  
               errmsg = 'WARNING: premature termination by "'+iterproc+'"'
               goto, TERMINATE
            ENDIF
            
            ;; IF parameters were changed (grrr..) THEN re-tie
-           IF max(abs(xnew0-xnew)) GT 0 THEN begin
+           IF max(abs(xnew0-xnew)) GT 0 THEN BEGIN
               IF qanytied THEN mpfit_tie, xnew, ptied
               x = xnew(iFree)
            ENDIF
@@ -858,7 +1073,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
      catch_msg = 'calling '+fcn
      fvec = mpfit_call(fcn, xnew, _EXTRA=fcnargs)
      IFlag = mperr
-     IF IFlag LT 0 THEN begin
+     IF IFlag LT 0 THEN BEGIN
         errmsg = 'ERROR: first call to "'+fcn+'" failed'
         goto, TERMINATE
      ENDIF
