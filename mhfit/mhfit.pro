@@ -262,12 +262,15 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
            IF KEYWORD_SET(pcovar) THEN BEGIN
               
               ;; overplot an ellipse
+              IF covar[I,J] NE 0 AND $
+                 covar[J,I] NE 0 THEN BEGIN
+                 
+                 lcovar = [ [ covar[I,I], covar[J,I]],$
+                            [ covar[I,J], covar[J,J]] ]
               
-              lcovar = [ [ covar[I,I], covar[J,I]],$
-                         [ covar[I,J], covar[J,J]] ]
-
-              MHFIT_PELIPSE, [params[I],params[J]], lcovar, nsigma=nsigma, color=5
-
+                 
+                 MHFIT_PELIPSE, [params[I],params[J]], lcovar, nsigma=nsigma, color=5
+              ENDIF
            ENDIF
 
            IF KEYWORD_SET(orig) THEN BEGIN
