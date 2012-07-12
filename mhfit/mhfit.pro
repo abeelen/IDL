@@ -347,23 +347,23 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
 
      ;; ... or use the limits from the parameters
      IF NOT KEYWORD_SET(auto_limits) THEN BEGIN
-        mpfit_parinfo, parinfo, tagnames, 'LIMITED', limited, status=st1
-        mpfit_parinfo, parinfo, tagnames, 'LIMITS',  limits,  status=st2
+        mpfit_parinfo, parinfo[I], tagnames, 'LIMITED', limited, status=st1
+        mpfit_parinfo, parinfo[I], tagnames, 'LIMITS',  limits,  status=st2
         
         IF st1 EQ 1 AND st2 EQ 1 THEN BEGIN
            parlim = WHERE(limited EQ 1, nLim)
            XRANGE[parlim] = limits[parlim]
         ENDIF
      ENDIF
-     
+
      FOR J=0, nGoodChains-1 DO BEGIN 
         ;; by defaults nSigma_plot sigma limits around the mean ...
         YRANGE = params[J] + [-1,1]*perror[J]*nSigma_plot
 
         ;; ... or use the limits from the parameters
         IF NOT KEYWORD_SET(auto_limits) THEN BEGIN
-           mpfit_parinfo, parinfo, tagnames, 'LIMITED', limited, status=st1
-           mpfit_parinfo, parinfo, tagnames, 'LIMITS',  limits,  status=st2
+           mpfit_parinfo, parinfo[J], tagnames, 'LIMITED', limited, status=st1
+           mpfit_parinfo, parinfo[J], tagnames, 'LIMITS',  limits,  status=st2
            
            IF st1 EQ 1 AND st2 EQ 1 THEN BEGIN
               parlim = WHERE(limited EQ 1, nLim)
@@ -520,6 +520,107 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
 ENDIF
 
 END
+
+
+PRO MHFIT_PCHAIN_AUTO, chains, parinfo,nbins = nbins, ROBUST=robust, FIT=fit, PCOVAR=Pcovar, AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL, ORIG=orig, INCOVAR=incovar
+;; Ploting markov chains, auto-correlation only.... 
+
+  IF NOT KEYWORD_SET(nbins)  THEN nbins  = 200
+
+  npar = N_ELEMENTS(chains[*,0])
+
+  ;; Finding non fixed/tied parameters
+  mpfit_parinfo, parinfo, tagnames, 'TIED',   ptied, default='', n=npar
+  mpfit_parinfo, parinfo, tagnames, 'FIXED', pfixed, default=0,  n=npar
+  goodChains = WHERE(pfixed EQ 0 AND STRTRIM(ptied,2) EQ '', nGoodChains)
+
+  IF nGoodChains EQ 0 THEN $
+     MESSAGE, 'EE - All parameters are either fixed or tied'
+  
+  parname = 'P('+strtrim(LINDGEN(npar),2)+')'
+  IF  N_ELEMENTS(parinfo) GT 0 THEN BEGIN
+     parinfo_tags = tag_names(parinfo)
+     wh = where(parinfo_tags EQ 'PARNAME', ct)
+     IF ct EQ 1 THEN BEGIN
+        wh = where(parinfo.parname NE '', ct)
+        IF ct GT 0 THEN $
+           parname(wh) = strmid(parinfo(wh).parname,0,25)
+     ENDIF
+  ENDIF
+
+  MHFIT_BSTAT, chains[goodChains,*], params, perror, covar, ROBUST=robust, FIT=FIT
+  
+  nSigma_plot = 6
+
+  erase
+  extraPlot = 2*(KEYWORD_SET(LnL) + KEYWORD_SET(accept))
+  MULTIPLOT,[CEIL(SQRT(nGoodChains+extraPlot)),CEIL((nGoodChains+extraPlot)*1.0/CEIL(SQRT(nGoodChains+extraPlot)))], YGAP = 0.01,/DOXAXIS
+  
+  
+  FOR I=0, nGoodChains-1 DO BEGIN 
+     
+     ;; by defaults nSigma_plot sigma limits around the mean ...
+     XRANGE = params[I] + [-1,1]*perror[I]*nSigma_plot
+     XTITLE=parname[goodChains[I]]
+     
+     ;; ... or use the limits from the parameters
+     IF NOT KEYWORD_SET(auto_limits) THEN BEGIN
+        mpfit_parinfo, parinfo[I], tagnames, 'LIMITED', limited, status=st1
+        mpfit_parinfo, parinfo[I], tagnames, 'LIMITS',  limits,  status=st2
+        
+        IF st1 EQ 1 AND st2 EQ 1 THEN BEGIN
+           parlim = WHERE(limited EQ 1, nLim)
+           XRANGE[parlim] = limits[parlim]
+        ENDIF
+     ENDIF
+
+
+     YRANGE=[0,1]
+     plot,[0],[0],/NODATA, $
+          XRANGE=XRANGE,/XSTYLE, $
+          YRANGE=YRANGE,/YSTYLE
+     ;; Draw the histogram...
+     yy = histogram(chains[goodChains[I],*], NBINS=nbins, LOCATIONS=xx, MIN=MIN(XRANGE), MAX=MAX(XRANGE))
+     oplot, xx, yy*1.D/MAX(yy),psym=10
+     IF KEYWORD_SET(pcovar) THEN BEGIN 
+        ;; overplot the corresponding gaussian
+        xx = DINDGEN(nBins*10)/(nBins*10-1)*(MAX(XRANGE)-MIN(XRANGE))+MIN(XRANGE)
+        yy = exp(-(xx-params[I])^2/(2*perror[I]^2))
+        oplot,xx,yy, color=5
+     ENDIF
+     IF KEYWORD_SET(orig) THEN BEGIN
+        ;; overplot starting value
+        oplot, [1,1]*parinfo[goodChains[I]].value,[0,1],linestyle=1, color=6
+        IF parinfo[goodChains[I]].limited[0] EQ 1 THEN $
+           oplot, [1,1]*parinfo[goodChains[I]].limits[0], !Y.CRANGE, linestyle=2,color=6
+        IF parinfo[goodChains[I]].limited[1] EQ 1 THEN $
+           oplot, [1,1]*parinfo[goodChains[I]].limits[1], !Y.CRANGE, linestyle=2,color=6
+        
+        IF KEYWORD_SET(INCOVAR) THEN BEGIN
+           xx = DINDGEN(nBins*10)/(nBins*10-1)*(MAX(XRANGE)-MIN(XRANGE))+MIN(XRANGE)
+           yy = exp(-(xx-parinfo[goodChains[I]].value)^2/(2*incovar[goodChains[I], goodChains[I]]) )
+           oplot, xx, yy, color=6
+        ENDIF
+     ENDIF
+     LEGEND,XTITLE,BOX=0
+     multiplot,/DOXAXIS
+  ENDFOR
+  
+  
+  IF KEYWORD_SET(LnL) THEN BEGIN 
+     multiplot, /DOYAXIS
+     plot, LnL,/XSTYLE,YTITLE="Log L"
+     multiplot
+  ENDIF
+  IF KEYWORD_SET(accept) THEN BEGIN 
+     multiplot, /DOYAXIS
+     plot, FINDGEN(N_ELEMENTS(accept))/accept,/XSTYLE,YTITLE="Accept rate"
+  ENDIF
+  
+multiplot,/default
+END
+
+
 
 PRO MHFIT_PCOV, params, covar, parinfo, nsigma=nsigma
 ;; Ploting covariance matrix
