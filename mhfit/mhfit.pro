@@ -190,6 +190,17 @@ FUNCTION MYFUNCT_FFT, p,dp,  k=K, lnPk=lnPk, Err=err
   return, (lnPk-ALOG(model))
 END
 
+FUNCTION MHFIT_BURNING, LnL, SIGMA=sigma
+  
+  IF NOT KEYWORD_SET(nSigma) THEN nSigma = 5
+  
+  yy = histogram(LnL, NBINS=200, LOCATIONS=xx, MIN=MIN(LnL), MAX=MAX(LnL))
+  result = gaussfit(xx,yy,params, nterms=3)
+  good = WHERE(LnL GT params[1]-sigma*params[2])
+  RETURN, good[0]
+END
+
+
 PRO MHFIT_ACHAIN, chains, parinfo
 ;; Analyse chains for convergence (FFT fits)
 
@@ -548,7 +559,6 @@ PRO MHFIT_PCHAIN_AUTO, chains, parinfo,nbins = nbins, ROBUST=robust, FIT=fit, PC
      ENDIF
   ENDIF
 
-  MHFIT_BSTAT, chains[goodChains,*], params, perror, covar, ROBUST=robust, FIT=FIT
   
   nSigma_plot = 6
 
@@ -558,9 +568,11 @@ PRO MHFIT_PCHAIN_AUTO, chains, parinfo,nbins = nbins, ROBUST=robust, FIT=fit, PC
   
   
   FOR I=0, nGoodChains-1 DO BEGIN 
-     
+
+     MHFIT_BSTAT, chains[goodChains[I],*], params, perror, covar, ROBUST=robust, FIT=FIT
+
      ;; by defaults nSigma_plot sigma limits around the mean ...
-     XRANGE = params[I] + [-1,1]*perror[I]*nSigma_plot
+     XRANGE = params[0] + [-1,1]*perror[0]*nSigma_plot
      XTITLE=parname[goodChains[I]]
      
      ;; ... or use the limits from the parameters
@@ -585,7 +597,7 @@ PRO MHFIT_PCHAIN_AUTO, chains, parinfo,nbins = nbins, ROBUST=robust, FIT=fit, PC
      IF KEYWORD_SET(pcovar) THEN BEGIN 
         ;; overplot the corresponding gaussian
         xx = DINDGEN(nBins*10)/(nBins*10-1)*(MAX(XRANGE)-MIN(XRANGE))+MIN(XRANGE)
-        yy = exp(-(xx-params[I])^2/(2*perror[I]^2))
+        yy = exp(-(xx-params[0])^2/(2*perror[0]^2))
         oplot,xx,yy, color=5
      ENDIF
      IF KEYWORD_SET(orig) THEN BEGIN
@@ -851,6 +863,7 @@ FUNCTION MHFIT_STEP, xall, covar, qulim, ulim, qllim, llim, ifree=ifree, NOCHOLE
      ;; Redraw the step if still outside bound
      wh = WHERE((qulim AND (xall[ifree] GT ulim-step_vec[ifree]) OR $
                  qllim AND (xall[ifree] LT llim-step_vec[ifree])), badStep)
+  
   ENDWHILE
 
   RETURN, xall+step_vec
