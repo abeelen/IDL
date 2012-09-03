@@ -824,7 +824,7 @@ PRO MHFIT_BSTAT, chains, params, perror, covar, ROBUST=robust, FIT=FIT
 
 END
 
-FUNCTION MHFIT_STEP, xall, covar, qulim, ulim, qllim, llim, ifree=ifree, NOCHOLESKY=NOCHOLESKY
+FUNCTION MHFIT_STEP, xall, covar, qulim, ulim, qllim, llim, ifree=ifree, NOCHOLESKY=NOCHOLESKY, DOMIRROR=DOMIRROR
 
   ;; Drawing values from the multivariate normal distribution
   ;; described by the covariance matrix covar
@@ -854,15 +854,19 @@ FUNCTION MHFIT_STEP, xall, covar, qulim, ulim, qllim, llim, ifree=ifree, NOCHOLE
      buff_vec[ifree] = buff_free
      step_vec        = covar#buff_vec
 
+
      ;; Reverse the sign of the step if we are up against the
-     ;; parameters limit
+     ;; parameters limit (Miror option
+     IF KEYWORD_SET(DOMIRROR) THEN BEGIN 
+        wh = WHERE( (qulim AND (xall[ifree] GT ulim-step_vec[ifree])) OR $
+                    (qllim AND (xall[ifree] LT llim-step_vec[ifree])), badStep)
+        IF badStep GT 0 THEN step_vec[wh] = -step_vec[wh]
+     
+     ENDIF
+
+     ;; Redraw the step if still outside bound
      wh = WHERE( (qulim AND (xall[ifree] GT ulim-step_vec[ifree])) OR $
                  (qllim AND (xall[ifree] LT llim-step_vec[ifree])), badStep)
-     IF badStep GT 0 THEN step_vec[wh] = -step_vec[wh]
-     
-     ;; Redraw the step if still outside bound
-     wh = WHERE((qulim AND (xall[ifree] GT ulim-step_vec[ifree]) OR $
-                 qllim AND (xall[ifree] LT llim-step_vec[ifree])), badStep)
   
   ENDWHILE
 
@@ -877,7 +881,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
                 PARINFO=parinfo, quiet=quiet, $
                 QUERY=query, SCALE=scale, $
                 CHAINS=chains, accept=accept, lnL = lnL, $
-                SAVE_STEP=save_step, RESTORE_STEP=restore_step
+                SAVE_STEP=save_step, DOMIRROR=DOMIRROR, RESTORE_STEP=restore_step
 ;; Main function
 
   IF keyword_set(query) THEN return, 1
@@ -1180,7 +1184,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
      ENDIF
 
      ;; xnew = mhfit_step(xall, lcovar, qulim, ulim, qllim, llim, iFree=iFree)
-     xnew = mhfit_step(xall, lower_L, qulim, ulim, qllim, llim, iFree=iFree,/NOCHOLESKY)
+     xnew = mhfit_step(xall, lower_L, qulim, ulim, qllim, llim, iFree=iFree,/NOCHOLESKY, DOMIRROR=DOMIRROR)
      
      ;; Compute new likelihood
      mperr = 0
