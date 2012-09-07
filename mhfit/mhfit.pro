@@ -335,8 +335,402 @@ PRO MHFIT_PELIPSE, center, covar, nsigma=nsigma, color=color
 
 END
 
-PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, ct=ct,ROBUST=robust, FIT=fit, SWIDTH=swidth, PCOVAR=Pcovar, AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL, ORIG=orig, LIMITS=limits, INCOVAR=incovar
+PRO MHFIT_PCHAIN_ALT, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, ct=ct,ROBUST=robust, FIT=fit, SWIDTH=swidth, PCOVAR=Pcovar, AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL, ORIG=orig, LIMITS=limits, INCOVAR=incovar, ORESULT=oresult, ALT2=alt2
 ;; Ploting markov chains.... 
+  
+  newline=string(10B)
+  
+  
+  IF NOT KEYWORD_SET(nsigma) THEN nsigma = [1,2,3]
+  IF NOT KEYWORD_SET(nbins)  THEN nbins  = 200
+  IF NOT KEYWORD_SET(ct)     THEN ct  = 0
+  IF NOT KEYWORD_SET(swidth) THEN swidth = 1
+  
+  npar = N_ELEMENTS(chains[*,0])
+  
+  ;; Setting up color table (forcing color 0 to white)
+  TVLCT, r_orig, g_orig, b_orig,/get
+  LOADCT, ct,/SILENT
+  TVLCT, r_ct, g_ct, b_ct,/get
+  IF !D.NAME EQ 'PS' THEN Begin
+     r_ct[0] = 255b
+     g_ct[0] = 255b
+     b_ct[0] = 255b
+  ENDIF
+  TVLCT, r_orig, g_orig, b_orig
+
+  ;; Finding non fixed/tied parameters
+  mpfit_parinfo, parinfo, tagnames, 'TIED',   ptied, default='', n=npar
+  mpfit_parinfo, parinfo, tagnames, 'FIXED', pfixed, default=0,  n=npar
+  goodChains = WHERE(pfixed EQ 0 AND STRTRIM(ptied,2) EQ '', nGoodChains)
+  
+  IF nGoodChains EQ 0 THEN $
+     MESSAGE, 'EE - All parameters are either fixed or tied'
+  
+  parname = 'P('+strtrim(LINDGEN(npar),2)+')'
+  IF  N_ELEMENTS(parinfo) GT 0 THEN BEGIN
+     parinfo_tags = tag_names(parinfo)
+     wh = where(parinfo_tags EQ 'PARNAME', ct)
+     IF ct EQ 1 THEN BEGIN
+        wh = where(parinfo.parname NE '', ct)
+        IF ct GT 0 THEN $
+           parname(wh) = parinfo(wh).parname
+     ENDIF
+  ENDIF
+  
+
+  
+  MHFIT_BSTAT, chains[goodChains,*], params, perror, covar, ROBUST=robust, FIT=FIT
+  
+  nSigma_plot = 6
+  
+  ERASE
+  IF KEYWORD_SET(alt2) THEN  $
+     MULTIPLOT,[nGoodChains,nGoodChains+1] $
+  ELSE $
+     MULTIPLOT,[nGoodChains,nGoodChains] 
+            
+  
+  ;; J is the Y axis....
+  FOR J=1, nGoodChains-1 DO BEGIN 
+     ;; by defaults nSigma_plot sigma limits around the mean ...
+     YRANGE = params[J] + [-1,1]*perror[J]*nSigma_plot
+     
+     ;; ... or use the limits from the parameters ...
+     IF NOT KEYWORD_SET(auto_limits) THEN BEGIN
+        mpfit_parinfo, parinfo[J], tagnames, 'LIMITED', limited, status=st1
+        mpfit_parinfo, parinfo[J], tagnames, 'LIMITS',  plimits,  status=st2
+        
+        IF st1 EQ 1 AND st2 EQ 1 THEN BEGIN
+           parlim = WHERE(limited EQ 1, nLim)
+           YRANGE[parlim] = plimits[parlim]
+        ENDIF
+     ENDIF
+     
+     ;; or by then given limits thru the limits keyword
+     IF KEYWORD_SET(limits) THEN BEGIN 
+        IF N_ELEMENTS(limits) EQ 2*nPar THEN BEGIN
+           YRANGE = limits[goodChains[J],*]
+        ENDIF
+     ENDIF
+     
+     Yexp = ALOG10(MAX(YRANGE)-MIN(YRANGE)) GT 2
+     
+     ;; I is the X axis
+     FOR I=0, nGoodChains-1 DO BEGIN 
+        
+        ;; by defaults nSigma_plot sigma limits around the mean ...
+        XRANGE = params[I] + [-1,1]*perror[I]*nSigma_plot
+        
+        ;; ... or use the limits from the parameters ...
+        IF NOT KEYWORD_SET(auto_limits) THEN  BEGIN
+           mpfit_parinfo, parinfo[I], tagnames, 'LIMITED', limited, status=st1
+           mpfit_parinfo, parinfo[I], tagnames, 'LIMITS',  plimits,  status=st2
+           
+           IF st1 EQ 1 AND st2 EQ 1 THEN BEGIN
+              parlim = WHERE(limited EQ 1, nLim)
+              XRANGE[parlim] = plimits[parlim]
+           ENDIF
+        ENDIF
+        
+        ;; or by then given limits thru the limits keyword
+        IF KEYWORD_SET(limits) THEN BEGIN 
+           IF N_ELEMENTS(limits) EQ 2*nPar THEN BEGIN
+              XRANGE = limits[goodChains[I],*]
+           ENDIF
+        ENDIF
+        
+        Xexp = ALOG10(MAX(XRANGE)-MIN(XRANGE)) GT 2
+        
+
+        ;; PLOTTING....
+        
+        IF (I GT J)  THEN BEGIN
+           ;; Upper triangle -> SKIP
+           multiplot
+           CONTINUE
+        ENDIF
+        
+        IF I EQ 0 AND J NE 0 THEN $
+           YTITLE=parname[goodChains[J]] $
+        ELSE $
+           YTITLE=""
+   
+        
+        IF J EQ nGoodChains-1 AND KEYWORD_SET(alt2) THEN $
+           XTITLE=parname[goodChains[I]] $
+        ELSE $
+           XTITLE=""
+        
+        IF (I EQ J) THEN BEGIN
+
+           multiplot
+           CONTINUE
+
+        ENDIF
+
+        IF (I LT J) THEN BEGIN
+           ;; lower triangle -> 2D histogram
+
+           IF (J EQ nGoodChains-1) AND KEYWORD_SET(alt2) THEN BEGIN
+              !X.TICKFORMAT=''
+              !X.TICKNAME = ''
+           ENDIF
+
+           IF Xexp THEN BEGIN 
+              IF Yexp AND I EQ 0 THEN BEGIN 
+                 plot,[0],[0],/NODATA, $
+                      XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, XTICKFORMAT='exponent', $
+                      YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE, YTICKFORMAT='exponent'
+              ENDIF ELSE BEGIN 
+                 plot,[0],[0],/NODATA, $
+                      XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, XTICKFORMAT='exponent', $
+                      YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE
+              ENDELSE
+           ENDIF ELSE BEGIN
+              IF Yexp AND I EQ 0 THEN BEGIN 
+                 plot,[0],[0],/NODATA, $
+                      XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, $
+                      YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE, YTICKFORMAT='exponent'
+              ENDIF ELSE BEGIN 
+                 plot,[0],[0],/NODATA, $
+                      XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, $
+                      YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE
+              ENDELSE
+           ENDELSE
+           
+           ;; plot the points 
+           IF KEYWORD_SET(clouds) THEN BEGIN 
+              oplot, chains[goodChains[I],*],chains[goodChains[J],*],psym=3
+           ENDIF ELSE BEGIN
+              width  = (MAX(XRANGE)-MIN(XRANGE))/nbins
+              height = (MAX(YRANGE)-MIN(YRANGE))/nbins
+              
+              bitmap = HIST_2D(chains[goodChains[I],*],chains[goodChains[J],*], $
+                               BIN1=width, BIN2=height, $
+                               MIN1=MIN(XRANGE)+width/2,  MAX1=MAX(XRANGE)-width/2,$
+                               MIN2=MIN(YRANGE)+height/2, MAX2=MAX(YRANGE)-height/2)
+              
+              IF swidth GT 1 THEN $
+                 bitmap = SMOOTH(bitmap, swidth, /EDGE_TRUNCATE)
+              bitmap[WHERE(bitmap EQ 0B)] = 0
+              TVLCT, r_ct, g_ct, b_ct
+              IMDISP, bitmap, /USEPOS, POSITION=!p.position, BOTTOM=0
+              TVLCT, r_orig, g_orig, b_orig
+              ;; REDRAW the plot
+
+
+           IF Xexp THEN BEGIN 
+              IF Yexp AND I EQ 0 THEN BEGIN 
+                 plot,[0],[0],/NODATA, $
+                      XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, XTICKFORMAT='exponent', $
+                      YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE, YTICKFORMAT='exponent'
+              ENDIF ELSE BEGIN 
+                 plot,[0],[0],/NODATA, $
+                      XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, XTICKFORMAT='exponent', $
+                      YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE
+              ENDELSE
+           ENDIF ELSE BEGIN
+              IF Yexp AND I EQ 0 THEN BEGIN 
+                 plot,[0],[0],/NODATA, $
+                      XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, $
+                      YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE, YTICKFORMAT='exponent'
+              ENDIF ELSE BEGIN 
+                 plot,[0],[0],/NODATA, $
+                      XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, $
+                      YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE
+              ENDELSE
+           ENDELSE
+              
+              ;; contour, bitmap, NLEVELS=3,XRANGE=XRANGE, /XSTYLE,YRANGE=YRANGE,/YSTYLE,POSITION=!p.position
+              
+           ENDELSE
+           
+           IF KEYWORD_SET(pcovar) THEN BEGIN
+              
+              ;; overplot an ellipse
+              IF covar[I,J] NE 0 AND $
+                 covar[J,I] NE 0 THEN BEGIN
+                 
+                 lcovar = [ [ covar[I,I], covar[J,I]],$
+                            [ covar[I,J], covar[J,J]] ]
+              
+                 
+                 MHFIT_PELIPSE, [params[I],params[J]], lcovar, nsigma=nsigma, color=5
+              ENDIF
+           ENDIF
+
+           IF KEYWORD_SET(orig) THEN BEGIN
+              ;; overplot starting value
+              oplot, [parinfo[goodChains[I]].value],[parinfo[goodChains[J]].value],psym=2, color=6
+
+              IF KEYWORD_SET(INCOVAR) THEN BEGIN
+                 
+                 IF incovar[goodChains[I],goodChains[J]] NE 0 AND $
+                    incovar[goodChains[J],goodChains[I]] NE 0 THEN BEGIN
+                    lcovar = [ [ incovar[goodChains[I],goodChains[I]], incovar[goodChains[J],goodChains[I]]],$
+                               [ incovar[goodChains[I],goodChains[J]], incovar[goodChains[J],goodChains[J]]] ]
+                    MHFIT_PELIPSE, [parinfo[goodChains[I]].value,parinfo[goodChains[J]].value], lcovar, nsigma=nsigma, color=6
+                 ENDIF
+                 
+              ENDIF
+           ENDIF
+           IF KEYWORD_SET(orig) OR KEYWORD_SET(limits) THEN BEGIN 
+              IF parinfo[goodChains[I]].limited[0] EQ 1 THEN $
+                 oplot, [1,1]*parinfo[goodChains[I]].limits[0], !Y.CRANGE, linestyle=2,color=6
+              IF parinfo[goodChains[I]].limited[1] EQ 1 THEN $
+                 oplot, [1,1]*parinfo[goodChains[I]].limits[1], !Y.CRANGE, linestyle=2,color=6
+              IF parinfo[goodChains[J]].limited[0] EQ 1 THEN $
+                 oplot, !X.CRANGE, [1,1]*parinfo[goodChains[J]].limits[0], linestyle=2,color=6
+              IF parinfo[goodChains[J]].limited[1] EQ 1 THEN $
+                 oplot, !X.CRANGE, [1,1]*parinfo[goodChains[J]].limits[1], linestyle=2,color=6
+              
+           ENDIF
+           multiplot
+        ENDIF
+        
+     ENDFOR
+  ENDFOR
+
+  IF KEYWORD_SET(ALT2) THEN $
+     FOR I=0, nGoodChains-1 DO multiplot
+
+  ;; Plot the line of 1D Histograms...
+
+  ;; I is the X axis
+  FOR I=0, nGoodChains-1 DO BEGIN 
+     
+     ;; by defaults nSigma_plot sigma limits around the mean ...
+     XRANGE = params[I] + [-1,1]*perror[I]*nSigma_plot
+     
+     ;; ... or use the limits from the parameters ...
+     IF NOT KEYWORD_SET(auto_limits) THEN  BEGIN
+        mpfit_parinfo, parinfo[I], tagnames, 'LIMITED', limited, status=st1
+        mpfit_parinfo, parinfo[I], tagnames, 'LIMITS',  plimits,  status=st2
+        
+        IF st1 EQ 1 AND st2 EQ 1 THEN BEGIN
+           parlim = WHERE(limited EQ 1, nLim)
+           XRANGE[parlim] = plimits[parlim]
+        ENDIF
+     ENDIF
+     
+     ;; or by then given limits thru the limits keyword
+     IF KEYWORD_SET(limits) THEN BEGIN 
+        IF N_ELEMENTS(limits) EQ 2*nPar THEN BEGIN
+           XRANGE = limits[goodChains[I],*]
+        ENDIF
+     ENDIF
+     
+     Xexp = ALOG10(MAX(XRANGE)-MIN(XRANGE)) GT 2
+
+     XTITLE=parname[goodChains[I]]
+
+     ;; auto part -> histograms
+     ;; YRANGE=[0,1]
+     ;; to avoid excessive thick marks
+     YRANGE = [1d-4, 1-1.d-4]
+
+     IF (I EQ 0) THEN $
+        YTITLE="Normalized!cdistribution"  $
+     ELSE $
+        YTITLE=""
+     
+
+     Yexp = ALOG10(MAX(YRANGE)-MIN(YRANGE)) GT 2
+     
+     IF Xexp THEN BEGIN 
+        IF Yexp THEN BEGIN 
+           plot,[0],[0],/NODATA, $
+                XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, XTICKFORMAT='exponent', $
+                YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE, YTICKFORMAT='exponent'
+        ENDIF ELSE BEGIN 
+           plot,[0],[0],/NODATA, $
+                XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, XTICKFORMAT='exponent', $
+                YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE
+        ENDELSE
+     ENDIF ELSE BEGIN
+        IF Yexp THEN BEGIN 
+           plot,[0],[0],/NODATA, $
+                XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, $
+                YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE, YTICKFORMAT='exponent'
+        ENDIF ELSE BEGIN 
+           plot,[0],[0],/NODATA, $
+                XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, $
+                YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE,YTICKNAME=REPLICATE(' ', 30)
+        ENDELSE
+     ENDELSE
+     
+     ;; Draw the histogram...
+     yy = histogram(chains[goodChains[I],*], NBINS=nbins, LOCATIONS=xx, MIN=MIN(XRANGE), MAX=MAX(XRANGE))
+     oplot, xx, yy*1.D/MAX(yy),psym=10
+     IF KEYWORD_SET(pcovar) THEN BEGIN 
+        ;; overplot the corresponding gaussian
+        xx = DINDGEN(nBins*10)/(nBins*10-1)*(MAX(XRANGE)-MIN(XRANGE))+MIN(XRANGE)
+        yy = exp(-(xx-params[I])^2/(2*perror[I]^2))
+        oplot,xx,yy, color=5
+     ENDIF
+     IF KEYWORD_SET(orig) THEN BEGIN
+        ;; overplot starting value
+        oplot, [1,1]*parinfo[goodChains[I]].value,[0,1],linestyle=1, color=6
+        
+        IF KEYWORD_SET(INCOVAR) THEN BEGIN
+           xx = DINDGEN(nBins*10)/(nBins*10-1)*(MAX(XRANGE)-MIN(XRANGE))+MIN(XRANGE)
+           yy = exp(-(xx-parinfo[goodChains[I]].value)^2/(2*incovar[goodChains[I], goodChains[I]]) )
+           oplot, xx, yy, color=6
+        ENDIF
+     ENDIF
+     IF KEYWORD_SET(orig) OR KEYWORD_SET(limits) THEN BEGIN
+        IF parinfo[goodChains[I]].limited[0] EQ 1 THEN $
+           oplot, [1,1]*parinfo[goodChains[I]].limits[0], !Y.CRANGE, linestyle=2,color=6
+        IF parinfo[goodChains[I]].limited[1] EQ 1 THEN $
+           oplot, [1,1]*parinfo[goodChains[I]].limits[1], !Y.CRANGE, linestyle=2,color=6
+        
+     ENDIF
+     IF KEYWORD_SET(oresult) THEN BEGIN
+        oplot, [1,1]*params[I], !Y.CRANGE,linestyle=1
+;;               oplot, [1,1]*params[I]+perror[I], !Y.CRANGE,linestyle=3
+;;               oplot, [1,1]*params[I]-perror[I], !Y.CRANGE,linestyle=3
+     ENDIF
+     
+  
+         multiplot
+         
+  ENDFOR
+  
+
+  multiplot, /default
+
+  IF KEYWORD_SET(accept) OR KEYWORD_SET(LnL) THEN BEGIN
+   
+     !p.charsize /= 2 
+     multiplot,[8,8]
+     FOR I=0, 5 DO $
+        multiplot
+     IF KEYWORD_SET(accept) THEN BEGIN
+        IF NOT KEYWORD_SET(LnL) THEN $
+           multiplot, /DOXAXIS, /DOYAXIS $
+        ELSE $
+           multiplot, /DOYAXIS
+                       
+        plot, FINDGEN(N_ELEMENTS(accept))/accept,/XSTYLE,YTITLE="Accept rate"
+        FOR I=0, 6 DO multiplot
+   ENDIF
+     IF KEYWORD_SET(LnL) THEN BEGIN 
+        multiplot, /DOXAXIS, /DOYAXIS
+        plot, LnL,/XSTYLE,YTITLE="Log L"
+     ENDIF
+     multiplot,/default
+     !p.charsize *= 2
+
+ENDIF
+
+END
+
+PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, ct=ct,ROBUST=robust, FIT=fit, SWIDTH=swidth, PCOVAR=Pcovar, AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL, ORIG=orig, LIMITS=limits, INCOVAR=incovar, ORESULT=oresult
+;; Ploting markov chains.... 
+
+  newline=string(10B)
+  
 
   IF NOT KEYWORD_SET(nsigma) THEN nsigma = [1,2,3]
   IF NOT KEYWORD_SET(nbins)  THEN nbins  = 200
@@ -384,6 +778,7 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
 
   erase
   MULTIPLOT,[nGoodChains,nGoodChains],/ROWMAJOR
+  ;; I is the X axis
   FOR I=0, nGoodChains-1 DO BEGIN 
 
      ;; by defaults nSigma_plot sigma limits around the mean ...
@@ -409,6 +804,7 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
 
      Xexp = ALOG10(MAX(XRANGE)-MIN(XRANGE)) GT 2
 
+     ;; J is the Y axis....
      FOR J=0, nGoodChains-1 DO BEGIN 
         ;; by defaults nSigma_plot sigma limits around the mean ...
         YRANGE = params[J] + [-1,1]*perror[J]*nSigma_plot
@@ -434,13 +830,13 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
 
         Yexp = ALOG10(MAX(YRANGE)-MIN(YRANGE)) GT 2
 
-        IF I GT J THEN BEGIN
+        IF (I GT J)  THEN BEGIN
            ;; Upper triangle -> SKIP
            multiplot
            CONTINUE
         ENDIF
 
-        IF I EQ 0 THEN $
+        IF I EQ 0 AND J NE 0 THEN $
            YTITLE=parname[goodChains[J]] $
         ELSE $
            YTITLE=""
@@ -449,10 +845,11 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
            XTITLE=parname[goodChains[I]] $
         ELSE $
            XTITLE=""
-                         
+        
+        IF (I EQ J) THEN BEGIN
 
-        IF I EQ J THEN BEGIN
-           ;; Auto part -> histograms
+
+           ;; auto part -> histograms
            ;; YRANGE=[0,1]
            ;; to avoid excessive thick marks
            YRANGE = [1d-4, 1-1.d-4]
@@ -477,7 +874,7 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
               ENDIF ELSE BEGIN 
                  plot,[0],[0],/NODATA, $
                       XRANGE=XRANGE,/XSTYLE, XTITLE=XTITLE, $
-                      YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE
+                      YRANGE=YRANGE,/YSTYLE, YTITLE=YTITLE,YTICKNAME=REPLICATE(' ', 30)
               ENDELSE
            ENDELSE
            
@@ -509,10 +906,19 @@ PRO MHFIT_PCHAIN, chains, parinfo, nsigma=nsigma, nbins = nbins, clouds=clouds, 
                  oplot, [1,1]*parinfo[goodChains[I]].limits[1], !Y.CRANGE, linestyle=2,color=6
 
            ENDIF
+           IF KEYWORD_SET(oresult) THEN BEGIN
+              oplot, [1,1]*params[I], !Y.CRANGE,linestyle=1
+;;               oplot, [1,1]*params[I]+perror[I], !Y.CRANGE,linestyle=3
+;;               oplot, [1,1]*params[I]-perror[I], !Y.CRANGE,linestyle=3
+           ENDIF
+
+
+              AXIS, YTITLE="Normalized!cdistribution", YAXIS=1,YRANGE=!Y.CRANGE,/YSTYLE,YTICKFORMAT='(F6.1)' 
+           
            multiplot
 
         ENDIF
-        IF I LT J THEN BEGIN
+        IF (I LT J) THEN BEGIN
            ;; lower triangle -> 2D histogram
 
            IF Xexp THEN BEGIN 
@@ -852,7 +1258,7 @@ PRO MHFIT_PCOV, params, covar, parinfo, nsigma=nsigma
 multiplot, /default
 END
 
-PRO MHFIT_PCENT, chains, percentils, PERCENT=percent,QUIET=quiet, PARINFO=parinfo
+PRO MHFIT_PCENT, chains, percentils, PERCENT=percent,QUIET=quiet, PARINFO=parinfo, TEX=TEX
 ;; compute percentil statistics
 
   IF NOT KEYWORD_SET(percent) THEN percent = [erfc(1./sqrt(2))/2, 0.5, 1-erfc(1./sqrt(2))/2]
@@ -883,8 +1289,14 @@ PRO MHFIT_PCENT, chains, percentils, PERCENT=percent,QUIET=quiet, PARINFO=parinf
               parname = parinfo[iChain].parname
            endif
         ENDIF
-        PRINT,  parname, mean, err, FORMAT='(A25," = ",G10.3, " + ", G10.3, " - ", G10.3)'
-        
+
+        IF NOT KEYWORD_SET(TEX) THEN BEGIN
+           PRINT,  parname, mean, err, FORMAT='(A25," = ",G12.3, " + ", G10.3, " - ", G10.3)'
+        ENDIF ELSE BEGIN
+           PRINT,  parname, mean, err, FORMAT='(A25," & $",G12.3, "^{+", G10.3, "}_{-", G10.3,"}$ \\")'
+         
+        ENDELSE
+
      ENDFOR
      
   ENDIF
