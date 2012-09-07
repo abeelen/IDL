@@ -1348,3 +1348,38 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
 TERMINATE:
 
 END
+
+PRO MHFIT_MCHAIN, savFiles, chains, parinfo, LnL, Accept, VERBOSE=VERBOSE
+  ;; Merge different saved file to retrieve the full chains
+
+  restore, savFiles[0]
+  good = WHERE(chains[0,*] NE 0, nGood)
+  IF KEYWORD_SET(VERBOSE) THEN $
+     PRINT, savFiles[0]+ " : "+STRING(nGood*100./N_ELEMENTS(chains[0,*])), "% done"
+  
+  megachains = chains[*,good]
+  megaLnl    = LnL[good]
+  megaAccept = accept[good]
+  
+  FOR I=1, N_ELEMENTS(savFiles)-1 DO BEGIN 
+     restore,savFiles[I]
+     good = WHERE(chains[0,*] NE 0,nGood)
+     
+     IF KEYWORD_SET(VERBOSE) THEN $
+        PRINT, savFiles[I]+ " : "+STRING(nGood*100./N_ELEMENTS(chains[0,*])), "% done"
+     
+     tmp = DBLARR(N_ELEMENTS(megachains[*,0]), N_ELEMENTS(megachains[0,*])+nGood)
+     tmp[*,0:N_ELEMENTS(megachains[0,*])-1] = megaChains
+     tmp[*,N_ELEMENTS(megachains[0,*]):*]   = chains[*,good]
+     megaChains = tmp
+     megaLnl    = [megaLnl, Lnl[good]]
+     megaAccept = [megaAccept, accept[good]+megaAccept[N_ELEMENTS(megaAccept)-1]]
+  ENDFOR
+  
+  
+  chains = megaChains
+  Lnl    = megaLnl
+  accept = megaAccept 
+  
+
+END
