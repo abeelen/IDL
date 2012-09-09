@@ -234,6 +234,13 @@ FUNCTION MHFIT_BURNING, LnL, SIGMA=sigma
 END
 
 
+FUNCTION LogGaussianPrior, P, P0, covar
+;; Gaussian Prior
+  
+  RETURN, (-1.D*(TRANSPOSE(P-P0)#INVERT(covar)#(P-P0))/2)[0]
+  
+END
+
 PRO MHFIT_ACHAIN, chains, parinfo
 ;; Analyse chains for convergence (FFT fits)
 
@@ -1418,7 +1425,8 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
                 PARINFO=parinfo, quiet=quiet, $
                 QUERY=query, SCALE=scale, $
                 CHAINS=chains, accept=accept, lnL = lnL, $
-                SAVE_STEP=save_step, DOMIRROR=DOMIRROR, RESTORE_STEP=restore_step
+                SAVE_STEP=save_step, DOMIRROR=DOMIRROR, RESTORE_STEP=restore_step, $
+                indexPrior=indexPrior
 ;; Main function
 
   IF keyword_set(query) THEN return, 1
@@ -1543,6 +1551,8 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   ;; Zero out the lower triangular portion to get L^T
   FOR I=0, N_ELEMENTS(lower_L[*,0])-2 DO lower_L[I,I+1:*] = 0
   
+  IF KEYWORD_SET(indexPrior) THEN $
+     xinit = xall
 
   ;; Compose only VARYING parameters
   xnew = xall      ;; xnew is the set of parameters to be returned
@@ -1664,6 +1674,11 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   ;; So log Likelihood : 
   prev = -1.D * (mpfit_enorm(fvec)^2) / 2
 
+  IF KEYWORD_SET(indexPrior) THEN BEGIN
+     prev += LogGaussianPrior(xall[indexPrior], xinit[indexPrior], (incovar[indexPrior,*])[*,indexPrior])
+  ENDIF
+    
+
   chains[*,iAccept-1] = xnew
   accept[iAccept-1]   = iLoop
   lnL[iAccept-1]      = prev
@@ -1736,6 +1751,10 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
 
      cur = -1.D * (mpfit_enorm(fvec)^2) / 2
 
+     IF KEYWORD_SET(indexPrior) THEN BEGIN
+        cur += LogGaussianPrior(xnew[indexPrior], xinit[indexPrior], (incovar[indexPrior,*])[*,indexPrior])
+     ENDIF
+     
 ;; L_cur / L_prev GT random
 
      IF ( (ALOG(RANDOMU(seed)) + prev - cur) LT 0 ) THEN BEGIN
