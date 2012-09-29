@@ -1071,7 +1071,7 @@ ENDIF
 END
 
 
-PRO MHFIT_PCHAIN_AUTO, chains, parinfo,nbins = nbins, ROBUST=robust, FIT=fit, PCOVAR=Pcovar, AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL, ORIG=orig, INCOVAR=incovar
+PRO MHFIT_PCHAIN_AUTO, chains, parinfo,nbins = nbins, ROBUST=robust, FIT=fit, PCOVAR=Pcovar, AUTO_LIMITS=auto_limits, ACCEPT=accept, LNL=LnL, ORIG=orig, INCOVAR=incovar,YLOG=YLOG
 ;; Ploting markov chains, auto-correlation only.... 
 
   IF NOT KEYWORD_SET(nbins)  THEN nbins  = 200
@@ -1128,7 +1128,7 @@ PRO MHFIT_PCHAIN_AUTO, chains, parinfo,nbins = nbins, ROBUST=robust, FIT=fit, PC
      YRANGE=[0,1]
      plot,[0],[0],/NODATA, $
           XRANGE=XRANGE,/XSTYLE, $
-          YRANGE=YRANGE,/YSTYLE
+          YRANGE=YRANGE,/YSTYLE, YLOG=YLOG
      ;; Draw the histogram...
      yy = histogram(chains[goodChains[I],*], NBINS=nbins, LOCATIONS=xx, MIN=MIN(XRANGE), MAX=MAX(XRANGE))
      oplot, xx, yy*1.D/MAX(yy),psym=10
