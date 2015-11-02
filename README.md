@@ -5,8 +5,8 @@ IDL Scripts
 Several discarded [IDL][IDL] scripts that I wrote for my own use but that may be usefull to other. They are all under the [GPL][GPL], so everyone is permitted to redistribute and/or modify them under the terms of the [GPL][GPL]
 
 
- [GILDAS][GILDAS] Line fitting (gildas)
- --------------------------------------
+[GILDAS][GILDAS] Line fitting (gildas)
+--------------------------------------
 
 > Deriving line parameter from a UVFIT in the [Grenoble Image and Line Data Analysis System][GILDAS] is not an easy task. I developped a few program to be able to do it easily. First you should patch the gio library of [GILDAS][GILDAS] in order to be able to save uvfit result in fits format. The task gildas_fits or fits will then be able to save UVFITS result table in fits format (use standard fits format and number of bits=-32). The resulting fits file can then be used to derive line parameters, for example with the IDL script included, using the Markwardt IDL Library to make the fit. The very usefull TexToIDL library is also used to legend the plot. Uncertainties on the fitted line parameters are derived from spectra uncertainties, computed from the visibilities and thus does not required the complex process of deconvolution/reconvolution involved in the mapping of interferometric data.
 
