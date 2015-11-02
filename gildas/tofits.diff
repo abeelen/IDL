@@ -1,0 +1,25 @@
+Index: tofits.f
+===================================================================
+RCS file: /CVS/GILDAS/gildas/kernel/lib/gio/tofits.f,v
+retrieving revision 1.1
+diff -u -r1.1 tofits.f
+--- tofits.f	19 Jun 2003 17:31:04 -0000	1.1
++++ tofits.f	7 Jun 2006 14:12:42 -0000
+@@ -10,7 +10,7 @@
+       INCLUDE 'fitsdef.inc'
+       INTEGER BLC(4),TRC(4)
+       DATA BLC/4*0/, TRC/4*0/
+-!
++! 
+       IF (A_STYLE.NE.UVFITS.AND.A_STYLE.NE.AIPSFITS) THEN
+          CALL X_RESET
+          CALL SIC_PARSEF(GDFNAME,X_FILE,' ','.GDF')
+@@ -18,7 +18,7 @@
+          IF (.NOT.ERROR) CALL
+      &   GDF_REIS (X_ISLO,X_TYPE,X_FILE,X_FORM,X_SIZE,ERROR)
+          IF (ERROR) RETURN
+-         IF (X_TYPE.NE.'GILDAS_IMAGE') THEN
++         IF (X_TYPE.NE.'GILDAS_IMAGE'.AND.X_TYPE.NE.'GILDAS_UVFIT') THEN
+             WRITE(6,100) 'E-IMFITS,  Gildas file is not an image'
+             ERROR = .TRUE.
+             RETURN
