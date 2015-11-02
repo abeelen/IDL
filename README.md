@@ -30,7 +30,7 @@ Several small [IDL][IDL] that I wrote for my own use but that may be usefull to 
     - ```read_sdss_spectrum.pro``` : read an [SDSS][SDSS] spectrum into a [IDL][IDL] structure
     - ```plot_sdss_spectrum.pro``` : plot an [SDSS][SDSS] spectrum the [SDSS][SDSS] way
 
-* [IDL][IDL] Misc. (mis)
+* [IDL][IDL] Misc. (misc)
 > Here are a few [IDL][IDL] scripts that I wrote for every day use.
     - ```zeta.pro``` compute the zeta function
     - ```barre.pro``` draw an horizontal bar
