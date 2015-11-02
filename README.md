@@ -1,5 +1,8 @@
 
-Several small [IDL][IDL] that I wrote for my own use but that may be usefull to other. They are all under the [GPL][GPL], so everyone is permitted to redistribute and/or modify them under the terms of the [GPL][GPL]
+IDL scripts
+===========
+
+Several discarded [IDL][IDL] scripts that I wrote for my own use but that may be usefull to other. They are all under the [GPL][GPL], so everyone is permitted to redistribute and/or modify them under the terms of the [GPL][GPL]
 
 
 * [GILDAS][GILDAS] Line fitting (gildas):
