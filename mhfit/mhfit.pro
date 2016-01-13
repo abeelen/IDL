@@ -1129,6 +1129,9 @@ PRO MHFIT_PCHAIN_AUTO, chains, parinfo,nbins = nbins, ROBUST=robust, FIT=fit, PC
      plot,[0],[0],/NODATA, $
           XRANGE=XRANGE,/XSTYLE, $
           YRANGE=YRANGE,/YSTYLE, YLOG=YLOG
+     XYOUTS, MIN(XRANGE)+(MAX(XRANGE)-MIN(XRANGE))*0.7, $
+             MIN(YRANGE)+(MAX(YRANGE)-MIN(YRANGE))*0.7, $
+             XTITLE
      ;; Draw the histogram...
      yy = histogram(chains[goodChains[I],*], NBINS=nbins, LOCATIONS=xx, MIN=MIN(XRANGE), MAX=MAX(XRANGE))
      oplot, xx, yy*1.D/MAX(yy),psym=10
@@ -1152,7 +1155,7 @@ PRO MHFIT_PCHAIN_AUTO, chains, parinfo,nbins = nbins, ROBUST=robust, FIT=fit, PC
            oplot, xx, yy, color=6
         ENDIF
      ENDIF
-     LEGEND,XTITLE,BOX=0
+;;     LEGEND,XTITLE,BOX=0
      multiplot,/DOXAXIS
   ENDFOR
   
@@ -1685,6 +1688,15 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
 
   startTime = systime(/julian)
 
+  IF KEYWORD_SET(save_step) THEN BEGIN
+     IF TYPENAME(save_step) EQ "STRING" THEN BEGIN
+        save_prefix=save_step
+     ENDIF ELSE BEGIN
+        save_prefix=date_conv( startTime, 'FITS')
+     ENDELSE
+  ENDIF
+     
+  
   IF KEYWORD_SET(restore_step) THEN BEGIN 
      RESTORE, restore_step
      good = WHERE(accept NE 0, nGood)
@@ -1705,7 +1717,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
 
 ;; DEBUG
            IF KEYWORD_SET(save_step) THEN  $
-              save, FILENAME=date_conv( startTime, 'FITS')+'_chains.dat', parinfo, incovar, fcnargs, chains, accept, lnL, startTime, maxiter, /COMPRESS
+              save, FILENAME=save_prefix+'_chains.dat', parinfo, incovar, fcnargs, chains, accept, lnL, startTime, maxiter, /COMPRESS
 ;; DEBUG
            
 
