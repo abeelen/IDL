@@ -160,11 +160,12 @@
 ;
 ;
 ; MODIFICATION HISTORY:
-;   2012-06 Beelen. A Creation
+;   2012-06 Beelen. A. Creation
+;   2016-05 Beelen, A. Add nested sampling separate routine
 ;-
 PRO mhfit_dummy
   ;; Enclose in a procedure so these are not defined in the main level
-  FORWARD_FUNCTION myfunct_fft, mhfit_step, mhfit, mpfit_call, mpfit_enorm, mpfit
+  FORWARD_FUNCTION myfunct_fft, mhfit_step, mhfit, mpfit_call, mpfit_enorm, mpfit, LogSumExp
 END
 
 ;; Helper function for the plots
@@ -238,6 +239,28 @@ FUNCTION LogGaussianPrior, P, P0, covar
 ;; Gaussian Prior
   
   RETURN, (-1.D*(TRANSPOSE(P-P0)#INVERT(covar)#(P-P0))/2)[0]
+  
+END
+
+FUNCTION LogNoPrior, P, _EXTRA=_extra
+  ;; Log Likekihood prior when no prior
+  RETURN, 0
+END
+
+
+FUNCTION LogLikelihood, fvec, _EXTRA=_extra
+
+  m = N_ELEMENTS(fvec)
+  ;; Likelihood defined as exp(-chi2/2)/(Prod_i sqrt(2 pi)*sigma_i)
+  ;; so logLikelihood is
+  ;; logLike = -chi2/2 - N/2 log(2 pi) - sum ( log(sigma_i) )
+  ;;  sigma_i is not mandatory for MPFIT, thus...
+  ;; the log  Likelihood is defined as : 
+  prev = -1.D * (mpfit_enorm(fvec)^2) / 2 - m/2 * ALOG(2*!DPI)
+  
+  ;; Remember to substract sum (log(sigma_i)) to get the proper likelihood
+
+  RETURN, prev
   
 END
 
@@ -1387,7 +1410,7 @@ FUNCTION MHFIT_STEP, xall, covar, qulim, ulim, qllim, llim, ifree=ifree, NOCHOLE
      covar = lower_L
   ENDIF
 
-  if n_elements(ifree)  EQ 0 THEN ifree = lindgen(n_elements(xall))
+  if N_ELEMENTS(ifree)  EQ 0 THEN ifree = lindgen(N_ELEMENTS(xall))
 
   xnew = xall
   npar = N_ELEMENTS(xall)
@@ -1429,15 +1452,18 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
                 QUERY=query, SCALE=scale, $
                 CHAINS=chains, accept=accept, lnL = lnL, $
                 SAVE_STEP=save_step, DOMIRROR=DOMIRROR, RESTORE_STEP=restore_step, $
-                indexPrior=indexPrior
+                logLikelihoodPrior_fcn=logLikelihoodPrior_fcn, $
+                minLogLikelihood = minLogLikelihood
+  
 ;; Main function
 
   IF keyword_set(query) THEN return, 1
 
-  IF n_elements(iterproc) EQ 0 THEN iterproc = 'MPFIT_DEFITER'
-  IF n_elements(maxiter)  EQ 0 THEN maxiter  = 10000L
-  IF n_elements(nprint)   EQ 0 THEN nprint   = maxiter/5
-
+  IF N_ELEMENTS(iterproc) EQ 0 THEN iterproc = 'MPFIT_DEFITER'
+  IF N_ELEMENTS(maxiter)  EQ 0 THEN maxiter  = 10000L
+  IF N_ELEMENTS(nprint)   EQ 0 THEN nprint   = maxiter/5
+  IF N_ELEMENTS(minLogLikelihood) EQ 0 THEN minLogLikelihood = -!VALUES.D_INFINITY
+  
   IF KEYWORD_SET(restore_step) THEN RESTORE, restore_step
 
   IF n_params() EQ 0 OR NOT KEYWORD_SET(incovar) THEN BEGIN
@@ -1479,24 +1505,38 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
      goto, TERMINATE
   ENDIF
   IF sz[sz[0]+1] NE 7 THEN goto, FCN_NAME
+
+  ;; Parse LogLikelihood Prior function
+  IF KEYWORD_SET(logLikelihoodPrior_fcn) THEN BEGIN
+     sz = size(logLikelihoodPrior_fcn)
+     IF sz[0] NE 0 THEN BEGIN
+        FCN_PRIOR_NAME:
+        errmsg = 'ERROR: logLikelihoodPrior must be a scalar string'
+        goto, TERMINATE
+     ENDIF
+     IF sz[sz[0]+1] NE 7 THEN goto, FCN_PRIOR_NAME
+  ENDIF ELSE BEGIN
+     logLikelihoodPrior_fcn = 'LogNoPrior'
+  ENDELSE
+  
   
   isext = 0
   catch_msg = 'parsing input parameters'
   ;; Parameters can either be stored in parinfo, or x.  Parinfo takes
   ;; precedence IF it exists.
-  IF n_elements(xall) EQ 0 AND n_elements(parinfo) EQ 0 THEN BEGIN
+  IF N_ELEMENTS(xall) EQ 0 AND N_ELEMENTS(parinfo) EQ 0 THEN BEGIN
      errmsg = 'ERROR: must pass parameters in P or PARINFO'
      goto, TERMINATE
   ENDIF
   
   ;; Be sure that PARINFO is of the right type
-  IF n_elements(parinfo) GT 0 THEN BEGIN
+  IF N_ELEMENTS(parinfo) GT 0 THEN BEGIN
      parinfo_size = size(parinfo)
      IF parinfo_size[parinfo_size[0]+1] NE 8 THEN BEGIN
         errmsg = 'ERROR: PARINFO must be a structure.'
         goto, TERMINATE
      ENDIF
-     IF n_elements(xall) GT 0 AND n_elements(xall) NE n_elements(parinfo) $
+     IF N_ELEMENTS(xall) GT 0 AND N_ELEMENTS(xall) NE N_ELEMENTS(parinfo) $
      THEN BEGIN
         errmsg = 'ERROR: number of elements in PARINFO and P must agree'
         goto, TERMINATE
@@ -1505,7 +1545,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   
   ;; IF the parameters were not specIFied at the command line, THEN
   ;; extract them from PARINFO
-  IF n_elements(xall) EQ 0 THEN BEGIN
+  IF N_ELEMENTS(xall) EQ 0 THEN BEGIN
      mpfit_parinfo, parinfo, tagnames, 'VALUE', xall, status=status
      IF status EQ 0 THEN BEGIN
         errmsg = 'ERROR: either P or PARINFO(*).VALUE must be supplied.'
@@ -1517,7 +1557,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
      IF sz(sz(0)+1) NE 4 AND sz(sz(0)+1) NE 5 THEN $
         xall = double(xall)
   ENDIF
-  npar = n_elements(xall)
+  npar = N_ELEMENTS(xall)
   
   ;; TIED parameters?
   mpfit_parinfo, parinfo, tagnames, 'TIED', ptied, default='', n=npar
@@ -1554,9 +1594,6 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   ;; Zero out the lower triangular portion to get L^T
   FOR I=0, N_ELEMENTS(lower_L[*,0])-2 DO lower_L[I,I+1:*] = 0
   
-  IF KEYWORD_SET(indexPrior) THEN $
-     xinit = xall
-
   ;; Compose only VARYING parameters
   xnew = xall      ;; xnew is the set of parameters to be returned
   x = xnew[iFree]  ;; x is the set of free parameters
@@ -1605,7 +1642,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   ;; Initialize the number of parameters pegged at a hard limit value
   wh = where((qulim AND (x EQ ulim)) OR (qllim AND (x EQ llim)), npegged)
   
-  n = n_elements(x)
+  n = N_ELEMENTS(x)
 
   
   common mpfit_error, mperr
@@ -1650,7 +1687,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
      xnew = double(xnew)
   ENDIF
   
-  m = n_elements(fvec)
+  m = N_ELEMENTS(fvec)
   IF (m LT n) THEN BEGIN
      errmsg = 'ERROR: number of parameters must not exceed data'
      goto, TERMINATE
@@ -1663,7 +1700,7 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
      
   ;; IF requested, call fcn to enable printing of iterates
   IF qanytied THEN mpfit_tie, xnew, ptied
-  dof = (n_elements(fvec) - nfree) > 1L
+  dof = (N_ELEMENTS(fvec) - nfree) > 1L
 
   ;; chains contains parameters for all accepted iterations
   ;; lnL  containts the log likelihood for all accepted iterations
@@ -1673,15 +1710,14 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
   lnL    = DBLARR(maxiter)
   accept = DBLARR(maxiter)
 
-  ;; Likelihood defined as \propto exp (-chi2/2)
-  ;; So log Likelihood : 
-  prev = -1.D * (mpfit_enorm(fvec)^2) / 2
+  ;; TODO : Change to function call -> must adapt the first time
+  ;; run tests above
+  prev = logLikelihood(fvec)
+  
+  prev_prior = mpfit_call(logLikelihoodPrior_fcn, xnew, _EXTRA=fcnargs)
 
-  IF KEYWORD_SET(indexPrior) THEN BEGIN
-     prev += LogGaussianPrior(xall[indexPrior], xinit[indexPrior], (incovar[indexPrior,*])[*,indexPrior])
-  ENDIF
-    
-
+  prev += prev_prior
+  
   chains[*,iAccept-1] = xnew
   accept[iAccept-1]   = iLoop
   lnL[iAccept-1]      = prev
@@ -1756,20 +1792,19 @@ FUNCTION MHFIT, fcn, xall, INCOVAR=incovar, FUNCTARGS=fcnargs, $
      fvec = mpfit_call(fcn, xnew, _EXTRA=fcnargs)
      IFlag = mperr
      IF IFlag LT 0 THEN BEGIN
-        errmsg = 'ERROR: first call to "'+fcn+'" failed'
+        errmsg = 'ERROR: call to "'+fcn+'" failed'
         goto, TERMINATE
      ENDIF
 
-
-     cur = -1.D * (mpfit_enorm(fvec)^2) / 2
-
-     IF KEYWORD_SET(indexPrior) THEN BEGIN
-        cur += LogGaussianPrior(xnew[indexPrior], xinit[indexPrior], (incovar[indexPrior,*])[*,indexPrior])
-     ENDIF
+     cur = logLikelihood(fvec)
      
+     cur_prior = mpfit_call(logLikelihoodPrior_fcn, xnew, _EXTRA=fcnargs)
+     cur += cur_prior
+  
+
 ;; L_cur / L_prev GT random
 
-     IF ( (ALOG(RANDOMU(seed)) + prev - cur) LT 0 ) THEN BEGIN
+     IF ( (ALOG(RANDOMU(seed)) + prev - cur) LT 0 ) AND ( cur GT minLogLikelihood ) THEN BEGIN
 
         prev  = cur
         xall  = xnew
@@ -1825,4 +1860,157 @@ PRO MHFIT_MCHAIN, savFiles, chains, parinfo, LnL, Accept, VERBOSE=VERBOSE
   accept = megaAccept 
   
 
+END
+
+
+
+FUNCTION LogSumExp, values
+  ;; Return the numerically stable log of the sum of an array of log values
+  biggest = MAX(values)
+  x = values-biggest
+  RETURN, ALOG(TOTAL(EXP(x)))+biggest
+END
+    
+
+FUNCTION NESTED_SAMPLING,fcn, particules, FUNCTARGS=fcnargs, incovar=incovar, NESTED_FACTOR=nested_factor, $
+                    information=information, posterior_sample=posterior_sample, logMass=logMass, logLikelihood_keep=logLikelihood_keep, relWeights=relWeights, $
+                    doPLOT=doplot, doPRINT=doprint, $
+                    _EXTRA=_extra
+
+  ;; Perform a nested sampling to recover the evidence of a model.
+  ;; See http://www.inference.phy.cam.ac.uk/bayesys/nest.pdf
+  ;; See also Kyle Barbary code at https://github.com/AstroHackWeek/AstroHackWeek2015/blob/master/day4-day5-inference/nested_sampling_code/nested_sampling.py
+
+  ;; Follows the definition of mhfit, for the argument
+
+  ; ADDITIONNAL INPUTS:
+  ;     particules         - set of input parameter drawn from the priors
+  ;     nested_factor      - the multiplicative factor to define the number of nested loop from
+  ;                          the size of the particules array
+  ;     doPlot             - show the likelihood and weights being built
+  ;     doPrint            - print the actual likelihood/information
+  ;     logZ               - the actual likelihood ...
+  ;     information        - and associated information
+  ;     posterior_sample   - parameters sampled from the posterior
+  ;     logMass            - the logMass used in the nested sampling with ...
+  ;     logLikelihood_keep - the associated likelihoods ...
+  ;     relWeights         - and relative weights
+  ;     _extra             - Refers to the keywords of MHFIT 
+
+  
+  IF NOT KEYWORD_SET(nested_factor) THEN nested_factor=15L ;; this will probe masses from e(-15) to 1.
+  
+  sz = SIZE(particules)
+  n_param = sz[1]
+  N_particules = sz[2]
+
+  N_nested = N_particules*nested_factor
+
+  logLikelihood_particules = DBLARR(N_particules)
+  FOR iSample=0, N_particules-1 DO $
+     logLikelihood_particules[iSample] = logLikelihood( $
+     mpfit_call(fcn, particules[*,iSample], _EXTRA = fcnargs) )
+
+  
+  x_keep = DBLARR(n_param,N_nested)
+  logLikelihood_keep = DBLARR(N_nested)
+
+  FOR iNest=0L, N_nested-1 DO BEGIN
+     
+     index_min = (WHERE(logLikelihood_particules EQ MIN(logLikelihood_particules)))[0]
+     
+     lnl_min = logLikelihood_particules[index_min]
+     
+     ;; keep the minimum
+     x_keep[*,iNest] = particules[*,index_min]
+     logLikelihood_keep[iNest] = lnl_min
+     
+     ;; make it evolve with the constraint of higher likelihood
+     ;; first pick a starting point with higher likelihood
+     REPEAT index_other = FLOOR(RANDOMU(seed)*N_particules) UNTIL $
+                          index_other EQ index_min
+
+     ;; make this point evolve with mcmc under the minimum likelihood constraint
+     dummy = mhfit(fcn, particules[*, index_other], incovar=incovar, functargs = fcnargs, $
+                   chains=chains, lnl=lnl, covar=incovar, minLogLikelihood=lnl_min, $
+                   _EXTRA=_extra, /QUIET)
+     
+     ;; Get the last point on the chain, must be uncorrelated from the
+     ;; first one
+     lenght = (size(chains))[2]
+     particules[*, index_min] = chains[*,lenght-1]
+     logLikelihood_particules[index_min] = lnl[lenght-1]
+
+     IF KEYWORD_SET(doPlot) THEN BEGIN
+        
+        logMass = -(DINDGEN(iNest+1)+1)/N_particules
+        
+        logWeights = logMass+logLikelihood_keep[0:iNest]
+        relWeights = EXP(logWeights-MAX(logWeights))
+
+        erase
+        multiplot, [1,2], MTITLE=STRING(iNest*100.0/N_nested), MXTITLE="log(X)"
+        plot, logMass, logLikelihood_keep[0:iNest]
+        multiplot
+        plot, logMass, relWeights
+        multiplot,/default
+        wait, 0.005
+     ENDIF
+  ENDFOR
+
+  logMass = -(DINDGEN(N_nested+1)+1)/N_particules
+
+  logWeights = logMass+logLikelihood_keep
+  ;; normalized to maximum
+  relWeights = EXP(logWeights-MAX(logWeights))
+
+  IF KEYWORD_SET(doPlot) THEN BEGIN
+     
+     erase
+     multiplot, [1,2], MXTITLE="log(X)"
+     plot, logMass, logLikelihood_keep, YTITLE="log(Likelihood)"
+     multiplot
+     plot, logMass, relWeights, YTITLE="relative Posterior weights"
+     multiplot,/default
+  ENDIF
+  
+  ;; Normalize weights
+  logWeights = logMass
+  logWeights -= LogSumExp(logWeights)
+
+  ;; Marginal likelihood
+  logZ = LogSumExp(logWeights+logLikelihood_keep)
+
+  ;; normalized to sum
+  normalizedWeights = relWeights/TOTAL(relWeights)
+
+  ;; Compute information
+  information = TOTAL(normalizedWeights*(logLikelihood_keep-logZ))
+
+  effective_sample_size = CEIL(EXP(-TOTAL(normalizedWeights*ALOG(normalizedWeights+1d-300))))
+
+  IF KEYWORD_SET(doPRINT) THEN BEGIN
+     PRINT, "logZ = ", logZ, "+-", SQRT(information/N_particules)
+     PRINT, "Information = ", information
+     PRINT, "Effective sample size = ", effective_sample_size
+  ENDIF
+
+  ;; Draw a posterior sample
+
+  probability = relWeights/MAX(relWeights)
+  posterior_sample = DBLARR(n_param, effective_sample_size)
+  iSample = 0
+
+  WHILE ( iSample LT effective_sample_size)  DO BEGIN
+
+     index = FLOOR(RANDOMU(seed)*N_nested)
+     prob = probability[index]
+     IF RANDOMU(seed) LE prob THEN BEGIN
+        posterior_sample[*,iSample] = x_keep[*,index]
+        iSample += 1
+     ENDIF
+     
+  ENDWHILE
+
+  RETURN, logZ
 END
